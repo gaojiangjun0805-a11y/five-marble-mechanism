@@ -1,0 +1,1279 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" href="data:,">
+<title>五珠机关盘 · 20 步重力挑战</title>
+<style>
+  :root{
+    --bg:#0e1420; --panel:#161f30; --panel2:#1e2a40; --line:#2c3a55;
+    --text:#e6ecf7; --muted:#8ea2c4; --accent:#4fa8ff; --ok:#33cc66; --bad:#ff5566;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;min-height:100vh;font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
+    background:#0a1019;color:var(--text);padding:16px;}
+  body::before{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;opacity:.34;
+    background:url('assets/maze-mechanism-bg.png') center right/cover no-repeat;}
+  .game-intro,.wrap{position:relative;z-index:1;}
+  .game-intro{min-height:132px;max-width:1200px;margin:0 0 18px;padding:13px 0 16px;
+    border-bottom:1px solid rgba(195,155,93,.36);background:url('assets/maze-mechanism-bg.png') right center/680px auto no-repeat;}
+  .game-kicker{color:#e7bd72;font-size:12px;font-weight:700;letter-spacing:.8px;}
+  .game-intro h1{font-size:30px;line-height:1.1;margin:4px 0 5px;letter-spacing:0;}
+  .game-intro p{max-width:520px;margin:0;color:#c1cfdf;font-size:14px;line-height:1.55;}
+  .player-rules{display:flex;gap:18px;flex-wrap:wrap;max-width:820px;margin-top:13px;}
+  .player-rule{display:flex;align-items:baseline;gap:6px;padding-left:9px;border-left:2px solid #8b6230;
+    color:#d8e2ee;font-size:12px;line-height:1.25;white-space:nowrap;}
+  .player-rule b{color:#e8bd74;font-size:11px;letter-spacing:.4px;}
+  .wrap{display:flex;gap:18px;flex-wrap:wrap;align-items:flex-start;}
+  .left{flex:0 1 560px;width:min(560px,100%);}
+  .right{flex:1 1 340px;min-width:320px;max-width:520px;}
+  .board-stage{position:relative;width:560px;max-width:100%;aspect-ratio:680/740;}
+  canvas{background:#0a0f18;border-radius:14px;border:1px solid var(--line);touch-action:none;cursor:crosshair;
+    max-width:100%;}
+  .board-stage #cv{display:block;width:100%;height:auto;transition:opacity .2s;}
+  .board-stage.is-three-ready #cv{opacity:0;}
+  #threeBoard{position:absolute;inset:0;pointer-events:none;overflow:hidden;border-radius:14px;}
+  #threeBoard canvas{display:block;width:100%!important;height:100%!important;border:0;background:transparent;cursor:default;}
+  .panel{background:rgba(22,31,48,.94);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:14px;}
+  .panel h2{font-size:14px;margin:0 0 10px;color:var(--accent);letter-spacing:.5px;}
+  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px;}
+  button{background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:8px;
+    padding:8px 12px;font-size:13px;cursor:pointer;transition:.12s;}
+  button:hover{border-color:var(--accent);}
+  button:disabled{opacity:.4;cursor:not-allowed;}
+  button.primary{background:var(--accent);border-color:var(--accent);color:#06101f;font-weight:600;}
+  button.go{background:var(--ok);border-color:var(--ok);color:#06101f;font-weight:700;font-size:15px;padding:10px 22px;}
+  button.small{padding:5px 9px;font-size:12px;}
+  button.sizeBtn.active{background:var(--accent);border-color:var(--accent);color:#06101f;font-weight:700;}
+  select{background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:7px;padding:6px 8px;font-size:13px;}
+  label{font-size:13px;color:var(--muted);}
+  .chips{display:grid;grid-template-columns:repeat(10,1fr);gap:5px;}
+  .chip{background:var(--panel2);border:1px solid var(--line);border-radius:6px;text-align:center;
+    padding:5px 0;font-size:13px;cursor:pointer;user-select:none;line-height:1.2;}
+  .chip .n{display:block;font-size:9px;color:var(--muted);}
+  .chip.cw{color:#ffcf4d;} .chip.ccw{color:#4fd0ff;}
+  .chip.done{opacity:.35;}
+  .chip.cur{border-color:#ffd94d;box-shadow:0 0 6px #ffd94d66;}
+  .tgt{display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
+  .targetItem{display:inline-flex;align-items:center;gap:5px;color:var(--text);font-size:13px;}
+  .swatch{width:22px;height:22px;border-radius:50%;border:2px solid #ffffff40;display:inline-block;vertical-align:middle;}
+  .result{font-size:15px;font-weight:600;min-height:22px;}
+  .seq{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:6px;min-height:24px;}
+  .hint{font-size:12px;color:var(--muted);line-height:1.6;}
+  .principle-flow{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:7px;color:#dce7f4;font-size:13px;}
+  .principle-flow b{color:#e8bd74;font-size:12px;}
+  #verifyBar{display:none;background:#12251a;border-color:#2a5c3d;}
+  #stepInfo{font-size:14px;font-weight:600;}
+  @media (max-width:720px){
+    body{padding:12px;}
+    .game-intro{min-height:0;margin-bottom:12px;padding:10px 0 13px;background-size:430px auto;background-position:120px center;}
+    .game-intro h1{font-size:26px;}
+    .game-intro p{font-size:13px;max-width:390px;}
+    .player-rules{gap:8px 12px;margin-top:10px;}
+    .player-rule{flex:1 1 calc(50% - 12px);min-width:0;white-space:normal;}
+    .wrap{gap:12px;}
+    .left,.right{flex:1 1 100%;width:100%;min-width:0;max-width:none;}
+    .panel{padding:12px;margin-bottom:12px;}
+    canvas{display:block;width:100%;height:auto;}
+    .chips{grid-template-columns:repeat(5,minmax(0,1fr));}
+  }
+</style>
+</head>
+<body>
+  <header class="game-intro">
+    <div class="game-kicker">20 步重力机关挑战</div>
+    <h1>五珠机关盘</h1>
+    <p>倾转盘面，布置路径，让五颗钢珠按指定顺序出盘。</p>
+    <div class="player-rules" id="playerRules" aria-label="选手规则">
+      <div class="player-rule"><b>题面</b><span>固定，不可改</span></div>
+      <div class="player-rule"><b>操作</b><span>只摆盘内浅色墙</span></div>
+      <div class="player-rule"><b>目标</b><span>20 步按序出五珠</span></div>
+      <div class="player-rule"><b>胜负</b><span>第 5 珠越早越高分</span></div>
+    </div>
+  </header>
+
+  <div class="wrap">
+    <div class="left">
+      <div class="panel" style="max-width:560px;">
+        <h2>旋转指令 · 20 次（题目给定）</h2>
+        <div class="row">
+          <span class="hint">题面固定，不可修改</span>
+        </div>
+        <div class="chips" id="instrChips"></div>
+      </div>
+      <div class="board-stage" id="boardStage">
+        <canvas id="cv" width="680" height="740"></canvas>
+        <div id="threeBoard" aria-label="三维木质旋转迷宫"></div>
+      </div>
+      <div class="row" style="margin-top:10px;justify-content:center;">
+        <button class="primary" id="solveBtn">🤖 生成解</button>
+        <button id="verifyBtn">⏭ 逐步验证</button>
+        <button id="playBtn">▶ 自动演示</button>
+        <button id="quickBtn" class="small">⚡ 快速结果</button>
+        <button id="sealBtn" class="small">🧱 封闭路径</button>
+        <button id="editBtn" class="small">✎ 继续摆墙</button>
+        <button id="clearBtn" class="small">清空内墙</button>
+        <button id="resetBtn" class="small">重置内墙</button>
+      </div>
+
+      <div class="panel" id="verifyBar" style="margin-top:10px;">
+        <div class="row">
+          <button class="go" id="nextBtn">下一步 ▶</button>
+          <span id="stepInfo"></span>
+          <span style="flex:1"></span>
+          <button id="exitVerifyBtn" class="small">退出验证</button>
+        </div>
+        <div class="hint">每点一次「下一步」= 现场转动一次迷宫，等珠子滚稳。</div>
+      </div>
+
+      <div class="panel" style="margin-top:10px;">
+        <div class="result" id="result">摆墙模式：点格子边线增减普通内墙</div>
+        <div class="seq" id="seq"></div>
+      </div>
+
+      <div class="panel" id="solutionsPanel" style="display:none;">
+        <h2>已生成的解</h2>
+        <div class="row" id="solutionTabs"></div>
+      </div>
+    </div>
+
+    <div class="right">
+      <div class="panel">
+        <h2>目标出球顺序（题目给定）</h2>
+        <div class="tgt" id="targetBox"></div>
+      </div>
+
+      <div class="panel">
+        <h2>机关原理</h2>
+        <div class="principle-flow"><span>转动盘面</span><b>→ 重力换向 →</b><span>木墙导向</span><b>→</b><span>出口落珠</span></div>
+        <div class="hint">出口固定在底边第 <b id="exitInfo">-</b> 列；只有出口朝下时，落到出口格的钢珠才会出盘。</div>
+      </div>
+    </div>
+  </div>
+
+<script src="vendor/three.min.js"></script>
+<script>
+"use strict";
+const cv = document.getElementById('cv');
+const ctx = cv.getContext('2d');
+const CX = 340, CY = 350, BOARD = 600, OX = -BOARD/2, OY = -BOARD/2;
+
+// 颜色（红黄蓝绿紫）
+const COLORS = [
+  {id:'R', name:'红', css:'#ff4d4d'},
+  {id:'Y', name:'黄', css:'#ffd633'},
+  {id:'B', name:'蓝', css:'#4d79ff'},
+  {id:'G', name:'绿', css:'#33cc55'},
+  {id:'P', name:'紫', css:'#b34dff'},
+];
+const colOf = id => COLORS.find(c=>c.id===id);
+const FIXED_QUESTION = Object.freeze({
+  size: 10,
+  exitCol: 5,
+  balls: Object.freeze([
+    Object.freeze({id:'R', ir:1, ic:1}),
+    Object.freeze({id:'Y', ir:1, ic:8}),
+    Object.freeze({id:'B', ir:5, ic:5}),
+    Object.freeze({id:'G', ir:7, ic:1}),
+    Object.freeze({id:'P', ir:7, ic:8}),
+  ]),
+  instr: Object.freeze([1,-1,1,1,-1,-1,1,-1,-1,1,1,-1,1,1,-1,-1,1,-1,-1,1]),
+  target: Object.freeze(['R','Y','B','G','P']),
+});
+
+// 方向 N,E,S,W = 0,1,2,3
+const DIRS = [[-1,0],[0,1],[1,0],[0,-1]];
+const S_DIR = 2;
+
+let N, hwall, vwall, exitCol, balls, instr, target;
+let mode = 'design';           // 'design' | 'anim'
+let theta = 0, thetaTarget = 0;
+let disp = {};                 // 播放时的显示态 id -> {x,y,vy,alpha,exiting,r,c}
+let playToken = 0;
+let verifying = false, verifyBusy = false, vPtr = 0, vStep = 0, vRecord = [], vEvents = [], vScore = null;
+let solving = false, solveToken = 0;
+let hoverEdge = null, dragId = null, dragXY = null;
+let dropSeq = [];              // 已掉出的珠子（画在出口下方）
+let solutionHistory = [], solutionFingerprints = new Set(), activeSolutionIndex = -1;
+let lastFrameAt = performance.now();
+let threeState = null;
+
+/* ---------- 初始化 ---------- */
+function initState(){
+  N = FIXED_QUESTION.size;
+  exitCol = FIXED_QUESTION.exitCol;
+  balls = FIXED_QUESTION.balls.map(ball=>({...ball}));
+  instr = FIXED_QUESTION.instr.slice();
+  target = FIXED_QUESTION.target.slice();
+  const w = emptyWalls();
+  hwall = w.hw; vwall = w.vw;
+}
+function fixedSupportEdges(){
+  return balls.map(b=>({r:b.ir+1, c:b.ic}));
+}
+function addFixedSupports(hw){
+  for(const edge of fixedSupportEdges()) hw[edge.r][edge.c]=true;
+}
+function isFixedWall(t,r,c){
+  return t==='h' && fixedSupportEdges().some(edge=>edge.r===r && edge.c===c);
+}
+function toggleInternalWall(t,r,c){
+  if(isFixedWall(t,r,c)) return false;
+  if(t==='h') hwall[r][c]=!hwall[r][c];
+  else if(t==='v') vwall[r][c]=!vwall[r][c];
+  else return false;
+  return true;
+}
+function clearInternalWalls(){
+  for(let r=1;r<N;r++)for(let c=0;c<N;c++) if(!isFixedWall('h',r,c)) hwall[r][c]=false;
+  for(let r=0;r<N;r++)for(let c=1;c<N;c++) vwall[r][c]=false;
+  addFixedSupports(hwall);
+}
+function emptyWalls(){
+  const hw = Array.from({length:N+1},()=>Array(N).fill(false));
+  const vw = Array.from({length:N},()=>Array(N+1).fill(false));
+  for(let c=0;c<N;c++){ hw[0][c]=true; hw[N][c]=true; }
+  for(let r=0;r<N;r++){ vw[r][0]=true; vw[r][N]=true; }
+  hw[N][exitCol]=false;
+  if(balls) addFixedSupports(hw);
+  return {hw, vw};
+}
+function defaultInstr(){
+  const p=[1,-1,1,1,-1,-1,1,-1,-1,1,1,-1,1,1,-1,-1,1,-1,-1,1];
+  return p.slice(0,20);
+}
+function setExit(col){
+  hwall[N][exitCol]=true;
+  exitCol=col;
+  hwall[N][exitCol]=false;
+  document.getElementById('exitInfo').textContent=(exitCol+1);
+}
+
+/* ---------- 物理：静置 ---------- */
+function occSet(arr){ const s=new Set(); for(const b of arr) if(b.alive) s.add(b.r+','+b.c); return s; }
+function wallBetween(r,c,g){
+  if(g===0) return hwall[r][c];
+  if(g===1) return vwall[r][c+1];
+  if(g===2) return hwall[r+1][c];
+  return vwall[r][c];
+}
+function edgeKey(r,c,g){
+  if(g===0) return 'h,'+r+','+c;
+  if(g===1) return 'v,'+r+','+(c+1);
+  if(g===2) return 'h,'+(r+1)+','+c;
+  return 'v,'+r+','+c;
+}
+function settlePass(arr, g, record, tr){
+  const idx = arr.map((b,i)=>i).filter(i=>arr[i].alive);
+  idx.sort((a,b)=>{
+    const va = arr[a].r*DIRS[g][0]+arr[a].c*DIRS[g][1];
+    const vb = arr[b].r*DIRS[g][0]+arr[b].c*DIRS[g][1];
+    return vb-va;
+  });
+  let moved=false; const exits=[];
+  const occ = occSet(arr);
+  for(const i of idx){
+    const b=arr[i]; if(!b.alive) continue;
+    if(g===S_DIR && b.r===N-1 && b.c===exitCol && !hwall[N][exitCol]){
+      b.alive=false; occ.delete(b.r+','+b.c); record.push(b.id); exits.push(b.id); moved=true;
+      if(tr) tr.edges.add('h,'+N+','+exitCol);
+      continue;
+    }
+    const nr=b.r+DIRS[g][0], nc=b.c+DIRS[g][1];
+    if(nr<0||nr>=N||nc<0||nc>=N) continue;
+    if(wallBetween(b.r,b.c,g)) continue;
+    if(occ.has(nr+','+nc)) continue;
+    if(tr){ tr.edges.add(edgeKey(b.r,b.c,g)); tr.cells.add(nr+','+nc);
+            if(tr.by) tr.by[b.id].add(nr+','+nc); }
+    occ.delete(b.r+','+b.c); b.r=nr; b.c=nc; occ.add(nr+','+nc); moved=true;
+  }
+  return {moved, exits};
+}
+
+/* ---------- 整局模拟 ---------- */
+function simulate(tr){
+  const arr = balls.map(b=>({id:b.id, r:b.ir, c:b.ic, alive:true}));
+  if(tr) for(const b of arr){ tr.cells.add(b.r+','+b.c); if(tr.by) tr.by[b.id].add(b.r+','+b.c); }
+  const record=[]; const releaseSteps=[]; const events=[];
+  let g=S_DIR, th=0;
+  let currentStep=0;
+  const snapSet = ()=>{ const pos={}; for(const b of arr) pos[b.id]= b.alive?[b.r,b.c]:null; return pos; };
+  const doSettle=()=>{
+    while(true){
+      const {moved,exits}=settlePass(arr,g,record,tr);
+      if(!moved) break;
+      for(let i=0;i<exits.length;i++) releaseSteps.push(currentStep);
+      events.push({t:'set', pos:snapSet(), exits, step:currentStep});
+    }
+  };
+  doSettle();
+  for(const step of instr){
+    currentStep++;
+    if(step===1){ g=(g+3)%4; th+=90; } else { g=(g+1)%4; th-=90; }
+    events.push({t:'rot', theta:th, g, step:currentStep});
+    doSettle();
+  }
+  return {record, releaseSteps, score:scoreRelease(record,releaseSteps), events, final: arr};
+}
+
+function scoreRelease(record,releaseSteps){
+  const ordered=record.length===target.length && record.every((id,index)=>id===target[index]);
+  const completionStep=ordered && Number.isInteger(releaseSteps[record.length-1])
+    ? releaseSteps[record.length-1]
+    : null;
+  const completed=completionStep!==null && completionStep>=1 && completionStep<=instr.length;
+  return {
+    completed,
+    completionStep:completed?completionStep:null,
+    aheadBy:completed?instr.length-completionStep:null,
+  };
+}
+
+/* ---------- 自动求解（搜索内墙布局） ---------- */
+function edgesList(){
+  const es=[];
+  for(let r=1;r<N;r++)for(let c=0;c<N;c++)if(!isFixedWall('h',r,c))es.push({t:'h',r,c});
+  for(let r=0;r<N;r++)for(let c=1;c<N;c++)es.push({t:'v',r,c});
+  return es;
+}
+function cloneWalls(hw,vw){
+  return {hw:hw.map(row=>row.slice()), vw:vw.map(row=>row.slice())};
+}
+function solutionFingerprint(hw,vw){
+  return edgesList().filter(e=>(e.t==='h'?hw[e.r][e.c]:vw[e.r][e.c]))
+    .map(e=>`${e.t}:${e.r}:${e.c}`).join('|');
+}
+function solutionCount(){ return solutionHistory.length; }
+function storeSolution(hw,vw){
+  const fingerprint=solutionFingerprint(hw,vw);
+  if(solutionFingerprints.has(fingerprint)) return false;
+  const copy=cloneWalls(hw,vw);
+  addFixedSupports(copy.hw);
+  solutionFingerprints.add(fingerprint);
+  solutionHistory.push({...copy, fingerprint});
+  return true;
+}
+function matchesTarget(hw,vw){
+  const value=evalWalls(hw,vw);
+  return value.rec.length===target.length && value.rec.every((id,index)=>id===target[index]);
+}
+function acceptGeneratedSolution(hw,vw){
+  const candidate=cloneWalls(hw,vw);
+  addFixedSupports(candidate.hw);
+  if(!matchesTarget(candidate.hw,candidate.vw)) return false;
+  const seal=sealPaths(candidate.hw,candidate.vw);
+  if(!seal.ok || !matchesTarget(candidate.hw,candidate.vw)) return false;
+  return storeSolution(candidate.hw,candidate.vw);
+}
+function gravityTimeline(){
+  let g=S_DIR;
+  return instr.map(step=>{
+    g=step===1?(g+3)%4:(g+1)%4;
+    return g;
+  });
+}
+function edgeInDirection(r,c,g){
+  if(g===0) return {t:'h',r,c};
+  if(g===1) return {t:'v',r,c:c+1};
+  if(g===2) return {t:'h',r:r+1,c};
+  return {t:'v',r,c};
+}
+function canUseInternalEdge(edge){
+  if(edge.t==='h') return edge.r>=1 && edge.r<N && edge.c>=0 && edge.c<N && !isFixedWall('h',edge.r,edge.c);
+  return edge.r>=0 && edge.r<N && edge.c>=1 && edge.c<N;
+}
+function addSeedWall(hw,vw,edge){
+  if(!canUseInternalEdge(edge)) return false;
+  if(edge.t==='h') hw[edge.r][edge.c]=true;
+  else vw[edge.r][edge.c]=true;
+  return true;
+}
+function reverseSeedWalls(variant){
+  const w=emptyWalls();
+  const reverseGravity=gravityTimeline().slice().reverse();
+  const branchEdges=edgesList();
+  target.slice().reverse().forEach((id,rank)=>{
+    let r=N-1,c=exitCol, placed=0;
+    const offset=(variant*7+rank*3)%reverseGravity.length;
+    for(let turn=0;turn<reverseGravity.length && placed<3;turn++){
+      const g=reverseGravity[(turn+offset)%reverseGravity.length];
+      const back=(g+2)%4;
+      let nr=r+DIRS[back][0],nc=c+DIRS[back][1];
+      if(nr<0||nr>=N||nc<0||nc>=N){
+        const side=(variant+rank+turn)%2===0?(g+1)%4:(g+3)%4;
+        nr=r+DIRS[side][0]; nc=c+DIRS[side][1];
+      }
+      if(nr<0||nr>=N||nc<0||nc>=N) continue;
+      r=nr; c=nc;
+      if(addSeedWall(w.hw,w.vw,edgeInDirection(r,c,g))) placed++;
+    }
+  });
+  const branch=branchEdges[(variant*31+target.length*13)%branchEdges.length];
+  addSeedWall(w.hw,w.vw,branch);
+  return w;
+}
+function initialSearchWalls(variant,density,random=Math.random){
+  const w=reverseSeedWalls(variant);
+  for(const edge of edgesList()){
+    const has=edge.t==='h'?w.hw[edge.r][edge.c]:w.vw[edge.r][edge.c];
+    if(!has && random()<density) toggleEdge(w.hw,w.vw,edge);
+  }
+  return w;
+}
+function loadSolution(index){
+  const solution=solutionHistory[index];
+  if(!solution) return false;
+  const copy=cloneWalls(solution.hw,solution.vw);
+  addFixedSupports(copy.hw);
+  hwall=copy.hw; vwall=copy.vw; activeSolutionIndex=index;
+  renderSolutionHistory();
+  return true;
+}
+function renderSolutionHistory(){
+  const panel=document.getElementById('solutionsPanel');
+  const tabs=document.getElementById('solutionTabs');
+  if(!panel||!tabs) return;
+  panel.style.display=solutionHistory.length?'block':'none';
+  tabs.innerHTML='';
+  solutionHistory.forEach((solution,index)=>{
+    const button=document.createElement('button');
+    button.className='small'+(index===activeSolutionIndex?' sizeBtn active':'');
+    button.textContent=`方案 ${index+1} · ${wallCount(solution.hw,solution.vw)} 堵墙`;
+    button.onclick=()=>{ loadSolution(index); quick(); };
+    tabs.appendChild(button);
+  });
+}
+function toggleEdge(hw,vw,e){ if(e.t==='h') hw[e.r][e.c]=!hw[e.r][e.c]; else vw[e.r][e.c]=!vw[e.r][e.c]; }
+function wallCount(hw,vw){
+  let n=0;
+  for(let r=1;r<N;r++)for(let c=0;c<N;c++) if(hw[r][c])n++;
+  for(let r=0;r<N;r++)for(let c=1;c<N;c++) if(vw[r][c])n++;
+  return n;
+}
+function lcsLen(a,b){
+  const m=a.length,n=b.length;
+  const dp=Array.from({length:m+1},()=>Array(n+1).fill(0));
+  for(let i=1;i<=m;i++)for(let j=1;j<=n;j++)
+    dp[i][j]=a[i-1]===b[j-1]?dp[i-1][j-1]+1:Math.max(dp[i-1][j],dp[i][j-1]);
+  return dp[m][n];
+}
+function evalWalls(hw,vw){
+  const oh=hwall, ov=vwall;
+  hwall=hw; vwall=vw;
+  const sim=simulate();
+  hwall=oh; vwall=ov;
+  const rec=sim.record;
+  let p=0; while(p<5 && rec[p]===target[p]) p++;
+  // prox：没掉出的珠子离出口的总距离（越小越好），给"卡住的球"提供爬山梯度
+  let prox=0;
+  for(const b of sim.final) if(b.alive) prox += (N-1-b.r)+Math.abs(b.c-exitCol);
+  return {rec, prefix:p, drops:rec.length, lcs:lcsLen(rec,target), prox};
+}
+// 剪墙：逐一尝试拆掉每堵内墙，结果不变就真的拆掉，直到拆无可拆
+function pruneWalls(hw,vw){
+  const es=edgesList();
+  let removed=true;
+  while(removed){
+    removed=false;
+    for(let i=es.length-1;i>0;i--){ const j=Math.random()*(i+1)|0; [es[i],es[j]]=[es[j],es[i]]; }
+    for(const e of es){
+      const has = e.t==='h'?hw[e.r][e.c]:vw[e.r][e.c];
+      if(!has) continue;
+      if(e.t==='h')hw[e.r][e.c]=false; else vw[e.r][e.c]=false;
+      if(evalWalls(hw,vw).prefix===5){ removed=true; }
+      else { if(e.t==='h')hw[e.r][e.c]=true; else vw[e.r][e.c]=true; }
+    }
+  }
+}
+function isExitEdge(t,r,c){ return t==='h' && r===N && c===exitCol; }
+function sealWallsFromTrace(hw,vw,tr){
+  let added=0;
+  for(const key of tr.cells){
+    const [r,c]=key.split(',').map(Number);
+    const cand=[['h',r,c],['h',r+1,c],['v',r,c],['v',r,c+1]];
+    for(const [t,er,ec] of cand){
+      if(isExitEdge(t,er,ec)) continue;
+      if(tr.edges.has(t+','+er+','+ec)) continue;
+      if(t==='h'){ if(!hw[er][ec]){ hw[er][ec]=true; added++; } }
+      else       { if(!vw[er][ec]){ vw[er][ec]=true; added++; } }
+    }
+  }
+  return added;
+}
+// 封管：把小球滚过的所有路径封成一格宽管道（只在"从未被穿越"的边上加墙，出口始终保留开口）
+function sealPaths(hw,vw){
+  const oh=hwall, ov=vwall;
+  hw[N][exitCol]=false;
+  hwall=hw; vwall=vw;
+  const tr={cells:new Set(), edges:new Set()};
+  const before=simulate(tr).record.join('');
+  const added=sealWallsFromTrace(hw,vw,tr);
+  hw[N][exitCol]=false;
+  const after=simulate().record.join('');
+  hwall=oh; vwall=ov;
+  return {added, ok: after===before};
+}
+// 两阶段搜索：A 先找"5颗全部掉出"的种子，B 在保持全掉出的前提下专攻顺序
+function metricOf(v){ return v.drops*10000 + v.prefix*1000 + v.lcs*50; }
+function noteBest(best,hw,vw,v){
+  const m=metricOf(v);
+  if(m>best.m){ best.m=m; best.prefix=v.prefix;
+    best.hw=hw.map(r=>r.slice()); best.vw=vw.map(r=>r.slice()); }
+}
+// 阶段A：随机重启+爬山，目标 = 5 颗全部掉出
+function phaseA(deadline, es, best, variant=0){
+  let branch=0;
+  while(performance.now()<deadline){
+    const dens=0.04+Math.random()*0.15;
+    const w=initialSearchWalls(variant+branch++,dens); const hw=w.hw, vw=w.vw;
+    let cur=evalWalls(hw,vw);
+    for(let k=0;k<400 && performance.now()<deadline;k++){
+      if(cur.drops===5) break;
+      const e=es[Math.random()*es.length|0];
+      toggleEdge(hw,vw,e);
+      const nv=evalWalls(hw,vw);
+      if(nv.drops*200-nv.prox*2 >= cur.drops*200-cur.prox*2) cur=nv;
+      else toggleEdge(hw,vw,e);
+    }
+    noteBest(best,hw,vw,cur);
+    if(cur.drops===5) return {hw,vw,cur,born:performance.now()};
+  }
+  return null;
+}
+// 阶段B评分：顺序前缀为主，其次"下一颗需要的球"在实际序列里越靠前越好
+function scoreB(v){
+  let s=v.prefix*1000+v.lcs*50;
+  if(v.prefix<5){
+    const idx=v.rec.indexOf(target[v.prefix]);
+    if(idx>=0) s+=(4-idx)*20;
+  }
+  return s;
+}
+// 取某颗球全程经过的格子（用于定向变异）
+function trackedCellsOf(hw,vw,ballId){
+  const oh=hwall,ov=vwall; hwall=hw; vwall=vw;
+  const tr={cells:new Set(),edges:new Set(),by:{}};
+  for(const c of COLORS) tr.by[c.id]=new Set();
+  simulate(tr);
+  hwall=oh; vwall=ov;
+  return tr.by[ballId];
+}
+function edgesNearCells(cells){
+  const out=[];
+  for(const key of cells){
+    const [r,c]=key.split(',').map(Number);
+    if(r>=1) out.push({t:'h',r,c});
+    if(r+1<=N-1) out.push({t:'h',r:r+1,c});
+    if(c>=1) out.push({t:'v',r,c});
+    if(c+1<=N-1) out.push({t:'v',r,c:c+1});
+  }
+  return out;
+}
+// 阶段B：在该种子上续跑一个时间片；必须保持 5 颗全掉出。
+// 70% 的变异集中在"下一颗该掉的球"的路径附近（定向变异），其余全盘随机
+function phaseBStep(sess, deadline, es, best){
+  const {hw,vw}=sess;
+  while(performance.now()<deadline){
+    if(sess.cur.prefix===5) return true;
+    sess.iter=(sess.iter||0)+1;
+    if(sess.cur.prefix!==sess.lastPrefix || sess.iter%150===0){
+      sess.tEdges=edgesNearCells(trackedCellsOf(hw,vw,target[sess.cur.prefix]));
+      sess.lastPrefix=sess.cur.prefix;
+    }
+    const n=1+(Math.random()*2|0);
+    const moved=[];
+    for(let i=0;i<n;i++){
+      const pool=(Math.random()<0.7 && sess.tEdges && sess.tEdges.length)?sess.tEdges:es;
+      const e=pool[Math.random()*pool.length|0];
+      toggleEdge(hw,vw,e); moved.push(e);
+    }
+    const nv=evalWalls(hw,vw);
+    if(nv.drops===5 && scoreB(nv)>=scoreB(sess.cur)){ sess.cur=nv; noteBest(best,hw,vw,nv); }
+    else for(const e of moved) toggleEdge(hw,vw,e);
+  }
+  return sess.cur.prefix===5;
+}
+async function solve(){
+  if(solving) { solving=false; return; }   // 再点一次 = 取消
+  enterDesign();
+  const uniq=new Set(target);
+  if(uniq.size!==5){ setResult('<span style="color:var(--bad)">目标顺序有重复颜色，先改好目标再求解</span>'); return; }
+  solving=true; const token=++solveToken;
+  const btn=document.getElementById('solveBtn');
+  btn.textContent='⏹ 生成中…点击取消';
+  const es=edgesList();
+  const best={m:-1e9, prefix:-1, hw:null, vw:null};
+  let sess=null, seeds=0, branches=0, duplicates=0, generatedIndex=-1;
+  const t0=performance.now(), TOTAL=60000;
+  while(solving && token===solveToken && performance.now()-t0<TOTAL){
+    const slice=performance.now()+350;
+    if(!sess){
+      sess=phaseA(slice, es, best, branches++);
+      if(sess) seeds++;
+    }else{
+      if(phaseBStep(sess, slice, es, best)){
+        const candidate=cloneWalls(sess.hw,sess.vw);
+        pruneWalls(candidate.hw,candidate.vw);
+        if(acceptGeneratedSolution(candidate.hw,candidate.vw)){
+          generatedIndex=solutionHistory.length-1;
+          break;
+        }
+        duplicates++;
+        sess=null;
+        continue;
+      }
+      // 种子寿命自适应：顺序对得越多，越值得多花时间继续调
+      if(performance.now()-sess.born > 2500 + sess.cur.prefix*1500) sess=null;
+    }
+    setResult(`🤖 逆向分支生成中… ${((performance.now()-t0)/1000).toFixed(1)}s ｜ 已试 ${seeds} 个种子 ｜ 已跳过 ${duplicates} 个重复方案 ｜ 最好：前 ${Math.max(best.prefix,0)} 颗正确`);
+    await sleep(0);
+  }
+  if(token!==solveToken) return;
+  solving=false;
+  btn.textContent='🤖 生成解';
+  if(generatedIndex>=0){
+    loadSolution(generatedIndex);
+    const sim=simulate();
+    renderSeq(sim.record);
+    setResult(`<span style="color:var(--ok)">✓ 已生成方案 ${generatedIndex+1}：${wallCount(hwall,vwall)} 堵普通内墙，已通过完整回放和封管校验。</span> ｜ <b>${formatRaceScore(sim.score)}</b>`);
+  }else{
+    setResult(`<span style="color:var(--bad)">60 秒内未找到新的有效方案。当前已保留 ${solutionHistory.length} 套已验证方案，点击“生成解”会继续搜索不同分支。</span>`);
+  }
+}
+
+/* ---------- 结果展示 ---------- */
+function setResult(html){ document.getElementById('result').innerHTML=html; }
+function renderSeq(record){
+  const seq=document.getElementById('seq');
+  seq.innerHTML='';
+  record.forEach((id,i)=>{
+    const s=document.createElement('span'); s.className='swatch'; s.style.background=colOf(id).css; s.title=colOf(id).name;
+    seq.appendChild(s);
+    if(i<record.length-1){ const a=document.createElement('span'); a.textContent='→'; a.style.color='#8ea2c4'; seq.appendChild(a);}
+  });
+}
+function formatRaceScore(score){
+  return score&&score.completed
+    ? `竞速成绩：第 ${score.completionStep} / ${instr.length} 步完赛，提前 ${score.aheadBy} 步`
+    : '竞速成绩：无有效成绩';
+}
+function showResult(record,score){
+  renderSeq(record);
+  const dropped=record.join(''), want=target.join('');
+  if(record.length<5){
+    setResult(`<span style="color:var(--bad)">✗ 只掉出 ${record.length} 颗，还有珠子留在迷宫里</span> ｜ ${formatRaceScore(score)}`);
+  }else if(dropped===want){
+    setResult(`<span style="color:var(--ok)">✓ 成功！掉落顺序与目标一致</span> ｜ <b>${formatRaceScore(score)}</b>`);
+  }else{
+    setResult(`<span style="color:var(--bad)">✗ 顺序不符（目标 ${target.map(id=>colOf(id).name).join('')}）</span> ｜ ${formatRaceScore(score)}`);
+  }
+}
+
+/* ---------- 绘制 ---------- */
+function cellCenter(r,c){ return [OX+(c+0.5)*(BOARD/N), OY+(r+0.5)*(BOARD/N)]; }
+function cellToThree(r,c){ return {x:c+0.5-N/2, y:N/2-r-0.5}; }
+function threeExitSpec(){
+  return {x:cellToThree(N-1,exitCol).x, gapWidth:1.18, guideColor:'#35ee87', guideEmission:'#0a8d42'};
+}
+function threeWallSpec(fixed){
+  return fixed
+    ? {color:'#382011', roughness:0.7, metalness:0.02}
+    : {color:'#e4c28f', roughness:0.58, metalness:0.03};
+}
+function threeWoodMaterial(THREE,color,roughness,metalness=0.02){
+  return new THREE.MeshStandardMaterial({color,roughness,metalness});
+}
+function disposeThreeGroup(group){
+  while(group.children.length){
+    const child=group.children.pop();
+    if(child.geometry) child.geometry.dispose();
+    if(child.material){
+      if(Array.isArray(child.material)) child.material.forEach(material=>material.dispose());
+      else child.material.dispose();
+    }
+  }
+}
+function threeWallSignature(){
+  return `${hwall.map(row=>row.map(value=>value?1:0).join('')).join('/')}:${vwall.map(row=>row.map(value=>value?1:0).join('')).join('/')}`;
+}
+function addThreeWall(state,t,r,c,fixed){
+  const {THREE,wallGroup}=state;
+  const spec=threeWallSpec(fixed);
+  const color=new THREE.Color(spec.color);
+  color.offsetHSL(0,0,((r*7+c*11)%5-2)*0.025);
+  const material=threeWoodMaterial(THREE,color,spec.roughness,spec.metalness);
+  const horizontal=t==='h';
+  const geometry=horizontal
+    ? new THREE.BoxGeometry(1.04,0.15,0.66)
+    : new THREE.BoxGeometry(0.15,1.04,0.66);
+  const mesh=new THREE.Mesh(geometry,material);
+  if(horizontal){ mesh.position.set(c+0.5-N/2,N/2-r,0.69); }
+  else { mesh.position.set(c-N/2,N/2-r-0.5,0.69); }
+  mesh.castShadow=true; mesh.receiveShadow=true;
+  wallGroup.add(mesh);
+}
+function rebuildThreeWalls(){
+  if(!threeState) return;
+  const signature=threeWallSignature();
+  if(signature===threeState.wallSignature) return;
+  disposeThreeGroup(threeState.wallGroup);
+  for(let r=0;r<=N;r++) for(let c=0;c<N;c++) if(hwall[r][c]) addThreeWall(threeState,'h',r,c,isFixedWall('h',r,c));
+  for(let r=0;r<N;r++) for(let c=0;c<=N;c++) if(vwall[r][c]) addThreeWall(threeState,'v',r,c,false);
+  threeState.wallSignature=signature;
+}
+function initThreeBoard(){
+  if(threeState||!window.THREE) return;
+  const THREE=window.THREE;
+  const stage=document.getElementById('boardStage');
+  const host=document.getElementById('threeBoard');
+  if(!stage||!host) return;
+  try{
+    const renderer=new THREE.WebGLRenderer({antialias:true,alpha:false,powerPreference:'high-performance'});
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,1.5));
+    renderer.setClearColor(0x0a0f18,1);
+    renderer.shadowMap.enabled=true;
+    renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+    renderer.toneMapping=THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure=1.15;
+    host.appendChild(renderer.domElement);
+    const scene=new THREE.Scene();
+    const camera=new THREE.PerspectiveCamera(50,1,0.1,100);
+    camera.position.set(0,-7.4,19.2); camera.lookAt(0,0,0);
+    scene.add(new THREE.HemisphereLight(0xffefd7,0x1b1008,2.1));
+    const keyLight=new THREE.DirectionalLight(0xffe1b0,3.2);
+    keyLight.position.set(-5,-7,14); keyLight.castShadow=true;
+    keyLight.shadow.mapSize.set(1024,1024); keyLight.shadow.camera.left=-9; keyLight.shadow.camera.right=9;
+    keyLight.shadow.camera.top=9; keyLight.shadow.camera.bottom=-9;
+    scene.add(keyLight);
+    const fillLight=new THREE.PointLight(0xffc57a,18,22,2);
+    fillLight.position.set(4,3,7); scene.add(fillLight);
+
+    const boardGroup=new THREE.Group(); scene.add(boardGroup);
+    const base=new THREE.Mesh(new THREE.BoxGeometry(11.25,11.25,0.52),threeWoodMaterial(THREE,'#67401f',0.68));
+    base.position.z=0; base.castShadow=true; base.receiveShadow=true; boardGroup.add(base);
+    const playfield=new THREE.Mesh(new THREE.BoxGeometry(10.42,10.42,0.2),threeWoodMaterial(THREE,'#d9b686',0.72));
+    playfield.position.z=0.34; playfield.receiveShadow=true; boardGroup.add(playfield);
+    const rimMaterial=threeWoodMaterial(THREE,'#edc996',0.55);
+    const exit=threeExitSpec();
+    const railLeftEnd=exit.x-exit.gapWidth/2;
+    const railRightStart=exit.x+exit.gapWidth/2;
+    const rimParts=[
+      [11.32,0.3,0.62,0,5.38,0.57],
+      [railLeftEnd+5.66,0.3,0.62,(railLeftEnd-5.66)/2,-5.38,0.57],
+      [5.66-railRightStart,0.3,0.62,(railRightStart+5.66)/2,-5.38,0.57],
+      [0.3,10.5,0.62,-5.38,0,0.57], [0.3,10.5,0.62,5.38,0,0.57],
+    ];
+    rimParts.forEach(([width,height,depth,x,y,z])=>{
+      const rim=new THREE.Mesh(new THREE.BoxGeometry(width,height,depth),rimMaterial.clone());
+      rim.position.set(x,y,z); rim.castShadow=true; rim.receiveShadow=true; boardGroup.add(rim);
+    });
+    const gridVertices=[];
+    for(let i=0;i<=N;i++){
+      const p=-N/2+i;
+      gridVertices.push(-5,p,0.47,5,p,0.47,p,-5,0.47,p,5,0.47);
+    }
+    const gridGeometry=new THREE.BufferGeometry();
+    gridGeometry.setAttribute('position',new THREE.Float32BufferAttribute(gridVertices,3));
+    boardGroup.add(new THREE.LineSegments(gridGeometry,new THREE.LineBasicMaterial({color:'#9c663d',transparent:true,opacity:0.58})));
+    const screwGeometry=new THREE.SphereGeometry(0.09,12,8);
+    const screwMaterial=new THREE.MeshStandardMaterial({color:'#b8893c',metalness:0.85,roughness:0.28});
+    [[-5.08,-5.08],[-5.08,5.08],[5.08,-5.08],[5.08,5.08]].forEach(([x,y])=>{
+      const screw=new THREE.Mesh(screwGeometry,screwMaterial); screw.position.set(x,y,0.9); boardGroup.add(screw);
+    });
+    const exitGuideMaterial=new THREE.MeshStandardMaterial({
+      color:exit.guideColor, emissive:exit.guideEmission, emissiveIntensity:1.35, metalness:0.16, roughness:0.3,
+    });
+    const exitGuide=new THREE.Mesh(new THREE.BoxGeometry(exit.gapWidth*0.78,1.14,0.1),exitGuideMaterial);
+    exitGuide.position.set(exit.x,-5.42,0.48); exitGuide.receiveShadow=true; boardGroup.add(exitGuide);
+    const exitPostGeometry=new THREE.BoxGeometry(0.13,0.13,0.62);
+    [exit.x-exit.gapWidth/2,exit.x+exit.gapWidth/2].forEach(x=>{
+      const post=new THREE.Mesh(exitPostGeometry,exitGuideMaterial.clone());
+      post.position.set(x,-5.4,0.78); post.castShadow=true; boardGroup.add(post);
+    });
+
+    const wallGroup=new THREE.Group(); boardGroup.add(wallGroup);
+    const ballGroup=new THREE.Group(); boardGroup.add(ballGroup);
+    const ballGeometry=new THREE.SphereGeometry(0.31,28,18);
+    const trailGeometry=new THREE.SphereGeometry(0.11,14,10);
+    const ballMeshes={}, trailMeshes={};
+    COLORS.forEach(color=>{
+      const material=new THREE.MeshPhysicalMaterial({color:color.css,metalness:0.7,roughness:0.2,clearcoat:0.85,clearcoatRoughness:0.14});
+      const ball=new THREE.Mesh(ballGeometry,material); ball.castShadow=true; ball.receiveShadow=true; ballGroup.add(ball); ballMeshes[color.id]=ball;
+      trailMeshes[color.id]=Array.from({length:12},()=>{
+        const ghost=new THREE.Mesh(trailGeometry,new THREE.MeshBasicMaterial({color:color.css,transparent:true,opacity:0,depthWrite:false}));
+        ghost.visible=false; ballGroup.add(ghost); return ghost;
+      });
+    });
+    threeState={THREE,renderer,scene,camera,stage,boardGroup,wallGroup,ballMeshes,trailMeshes,wallSignature:''};
+    const resize=()=>{
+      if(!threeState) return;
+      const rect=stage.getBoundingClientRect();
+      renderer.setSize(Math.max(1,rect.width),Math.max(1,rect.height),false);
+      camera.aspect=rect.width/Math.max(1,rect.height); camera.updateProjectionMatrix();
+    };
+    window.addEventListener('resize',resize); resize();
+    stage.classList.add('is-three-ready');
+    rebuildThreeWalls(); updateThreeBoard();
+  }catch(error){
+    console.warn('3D renderer unavailable; using 2D fallback.',error);
+    threeState=null;
+  }
+}
+function updateThreeBoard(){
+  if(!threeState) return;
+  const {boardGroup,ballMeshes,trailMeshes,renderer,scene,camera}=threeState;
+  rebuildThreeWalls();
+  boardGroup.rotation.z=-theta*Math.PI/180;
+  const unit=BOARD/N;
+  for(const ball of balls){
+    const shown=mode==='anim'?disp[ball.id]:null;
+    const mesh=ballMeshes[ball.id];
+    const point=shown?{x:shown.x/unit,y:-shown.y/unit}:{...cellToThree(ball.ir,ball.ic)};
+    mesh.visible=!shown||shown.alpha>0;
+    mesh.position.set(point.x,point.y,shown&&shown.exiting?0.9+(1-shown.alpha)*0.45:0.97);
+    mesh.rotation.x+=(shown?shown.vy:0)*0.045;
+    mesh.rotation.y+=(shown?shown.vx:0)*0.045;
+    const trail=shown?.trail||[];
+    trailMeshes[ball.id].forEach((ghost,index)=>{
+      const mark=trail[index];
+      ghost.visible=Boolean(mark)&&mesh.visible;
+      if(mark){
+        ghost.position.set(mark.x/unit,-mark.y/unit,0.77);
+        ghost.material.opacity=Math.min(0.42,mark.alpha*0.7);
+        const scale=0.55+mark.alpha*0.9; ghost.scale.setScalar(scale);
+      }
+    });
+  }
+  renderer.render(scene,camera);
+}
+const WOOD_PALETTE=Object.freeze({
+  boardLight:'#bd7840', boardDark:'#7a3d1a', grain:'#4c230e', rim:'#35170a', rimLight:'#8f4b21',
+  grid:'#613019', exit:'#e5b85f', fixedFace:'#4a2411', fixedEdge:'#1f0d06', wallFace:'#d7a66d', wallEdge:'#633116',
+});
+function woodWallColors(fixed){
+  return fixed
+    ? {face:WOOD_PALETTE.fixedFace, edge:WOOD_PALETTE.fixedEdge, highlight:'#7a4425'}
+    : {face:WOOD_PALETTE.wallFace, edge:WOOD_PALETTE.wallEdge, highlight:'#f1cc98'};
+}
+function drawWoodSurface(){
+  ctx.fillStyle=WOOD_PALETTE.rim; ctx.fillRect(OX-16,OY-16,BOARD+32,BOARD+32);
+  const rim=ctx.createLinearGradient(OX-10,OY-10,OX+BOARD+10,OY+BOARD+10);
+  rim.addColorStop(0,'#c17b3e'); rim.addColorStop(0.4,WOOD_PALETTE.rimLight); rim.addColorStop(1,'#4b210d');
+  ctx.fillStyle=rim; ctx.fillRect(OX-10,OY-10,BOARD+20,BOARD+20);
+  const board=ctx.createLinearGradient(OX,OY,OX+BOARD,OY+BOARD);
+  board.addColorStop(0,WOOD_PALETTE.boardLight); board.addColorStop(0.5,'#a65e2c'); board.addColorStop(1,WOOD_PALETTE.boardDark);
+  ctx.fillStyle=board; ctx.fillRect(OX,OY,BOARD,BOARD);
+  ctx.save();
+  ctx.strokeStyle=WOOD_PALETTE.grain; ctx.lineWidth=1.2; ctx.globalAlpha=0.28;
+  for(let i=0;i<22;i++){
+    const y=OY+12+i*28;
+    ctx.beginPath(); ctx.moveTo(OX,y);
+    ctx.lineTo(OX+BOARD*0.35,y+Math.sin(i*1.9)*7);
+    ctx.lineTo(OX+BOARD*0.68,y+Math.sin(i*2.4+1)*5);
+    ctx.lineTo(OX+BOARD,y+Math.sin(i*1.2+2)*8); ctx.stroke();
+  }
+  ctx.restore();
+}
+function drawWoodWall(x1,y1,x2,y2,fixed){
+  const colors=woodWallColors(fixed);
+  ctx.save(); ctx.lineCap='round';
+  ctx.shadowColor='rgba(33,13,4,0.55)'; ctx.shadowBlur=5; ctx.shadowOffsetX=2; ctx.shadowOffsetY=3;
+  ctx.strokeStyle=colors.edge; ctx.lineWidth=fixed?11:10;
+  ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
+  ctx.shadowColor='transparent'; ctx.shadowBlur=0; ctx.shadowOffsetX=0; ctx.shadowOffsetY=0;
+  ctx.strokeStyle=colors.face; ctx.lineWidth=fixed?7:6;
+  ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
+  ctx.globalAlpha=0.52; ctx.strokeStyle=colors.highlight; ctx.lineWidth=1.2;
+  ctx.beginPath(); ctx.moveTo(x1,y1-1); ctx.lineTo(x2,y2-1); ctx.stroke();
+  ctx.restore();
+}
+function draw(){
+  const s=BOARD/N;
+  ctx.clearRect(0,0,cv.width,cv.height);
+  ctx.save();
+  ctx.fillStyle='#e1bf8c'; ctx.font='12px sans-serif'; ctx.textAlign='center';
+  ctx.fillText('重力方向 ↓（屏幕永远向下）', CX, 20);
+  ctx.restore();
+
+  ctx.save();
+  ctx.translate(CX,CY);
+  ctx.rotate(theta*Math.PI/180);
+  // 转动途中整体微缩，避免对角线超出画布被裁角
+  {
+    const m=((theta%90)+90)%90;
+    const dev=Math.min(m,90-m)/45;          // 0=正对齐, 1=45°
+    const sc=1-(1-(cv.width-30)/(BOARD*Math.SQRT2))*dev;
+    ctx.scale(sc,sc);
+  }
+  drawWoodSurface();
+  ctx.strokeStyle=WOOD_PALETTE.grid; ctx.lineWidth=1;
+  for(let i=0;i<=N;i++){
+    ctx.beginPath(); ctx.moveTo(OX+i*s,OY); ctx.lineTo(OX+i*s,OY+BOARD); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(OX,OY+i*s); ctx.lineTo(OX+BOARD,OY+i*s); ctx.stroke();
+  }
+  for(let r=0;r<=N;r++) for(let c=0;c<N;c++) if(hwall[r][c]){
+    drawWoodWall(OX+c*s,OY+r*s,OX+(c+1)*s,OY+r*s,isFixedWall('h',r,c));
+  }
+  for(let r=0;r<N;r++) for(let c=0;c<=N;c++) if(vwall[r][c]){
+    drawWoodWall(OX+c*s,OY+r*s,OX+c*s,OY+(r+1)*s,false);
+  }
+  // 出口标记
+  const ex0=OX+exitCol*s, ex1=OX+(exitCol+1)*s, ey=OY+BOARD;
+  ctx.strokeStyle=WOOD_PALETTE.exit; ctx.lineWidth=4;
+  ctx.beginPath(); ctx.moveTo(ex0+3,ey); ctx.lineTo(ex0+3,ey+9); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(ex1-3,ey); ctx.lineTo(ex1-3,ey+9); ctx.stroke();
+  ctx.fillStyle=WOOD_PALETTE.exit; ctx.font='11px sans-serif'; ctx.textAlign='center';
+  ctx.fillText('出口', (ex0+ex1)/2, ey+21);
+
+  if(mode==='design' && hoverEdge){
+    ctx.strokeStyle='#f6d47f'; ctx.lineWidth=5;
+    const e=hoverEdge;
+    ctx.beginPath();
+    if(e.type==='h'){ ctx.moveTo(OX+e.c*s,OY+e.r*s); ctx.lineTo(OX+(e.c+1)*s,OY+e.r*s);}
+    else { ctx.moveTo(OX+e.c*s,OY+e.r*s); ctx.lineTo(OX+e.c*s,OY+(e.r+1)*s);}
+    ctx.stroke();
+  }
+
+  const drawBall=(x,y,id,alpha)=>{
+    const rr=s*0.36;
+    ctx.globalAlpha=alpha*0.28; ctx.fillStyle='#251107';
+    ctx.beginPath(); ctx.arc(x+rr*0.18,y+rr*0.28,rr*0.9,0,7); ctx.fill();
+    ctx.globalAlpha=alpha;
+    const g=ctx.createRadialGradient(x-rr*0.3,y-rr*0.35,rr*0.2,x,y,rr);
+    g.addColorStop(0,'#ffffff'); g.addColorStop(0.25,colOf(id).css); g.addColorStop(1,shade(colOf(id).css));
+    ctx.fillStyle=g; ctx.beginPath(); ctx.arc(x,y,rr,0,7); ctx.fill();
+    ctx.strokeStyle='#00000055'; ctx.lineWidth=1.5; ctx.stroke();
+    ctx.globalAlpha=1;
+  };
+  if(mode==='design'){
+    for(const b of balls){
+      if(dragId===b.id && dragXY){ drawBall(dragXY[0],dragXY[1],b.id,1); continue; }
+      const [x,y]=cellCenter(b.ir,b.ic); drawBall(x,y,b.id,1);
+    }
+  }else{
+    for(const id in disp){
+      const d=disp[id]; if(d.alpha<=0) continue;
+      for(const trail of d.trail||[]){
+        ctx.globalAlpha=Math.min(d.alpha,trail.alpha);
+        ctx.fillStyle=colOf(id).css;
+        ctx.beginPath(); ctx.arc(trail.x,trail.y,trail.r,0,7); ctx.fill();
+      }
+      ctx.globalAlpha=1;
+      drawBall(d.x,d.y,id,d.alpha);
+    }
+  }
+  ctx.restore();
+
+  ctx.save();
+  const up = Math.round(((theta%360)+360)%360)===0;
+  ctx.fillStyle= up?'#f0c66e':'#c5a77d';
+  ctx.font='12px sans-serif'; ctx.textAlign='center';
+  ctx.fillText(up?'出口朝正下方 · 可掉落':'出口不在下方 · 不会掉落', CX, 38);
+
+  // 掉落顺序：画在出口（正立时）正下方
+  const s3=BOARD/N;
+  const exitX=CX+OX+(exitCol+0.5)*s3;
+  const y0=CY+BOARD/2+46;
+  if(dropSeq.length===0){
+    ctx.fillStyle='#8f6b47'; ctx.font='12px sans-serif';
+    ctx.fillText('掉出的珠子会依次排在这里', exitX, y0+4);
+  }else{
+    const sp=32, x0=exitX-(dropSeq.length-1)*sp/2;
+    dropSeq.forEach((id,i)=>{
+      const x=x0+i*sp;
+      ctx.fillStyle=colOf(id).css;
+      ctx.beginPath(); ctx.arc(x,y0,12,0,7); ctx.fill();
+      ctx.strokeStyle='#ffffff55'; ctx.lineWidth=1.5; ctx.stroke();
+      ctx.fillStyle='#06101f'; ctx.font='bold 11px sans-serif'; ctx.textBaseline='middle';
+      ctx.fillText(String(i+1), x, y0+0.5);
+      ctx.textBaseline='alphabetic';
+    });
+    ctx.fillStyle='#c5a77d'; ctx.font='12px sans-serif';
+    ctx.fillText('掉落顺序', exitX, y0+30);
+  }
+  ctx.restore();
+}
+function shade(hex){
+  const n=parseInt(hex.slice(1),16); let r=(n>>16)&255,g=(n>>8)&255,b=n&255;
+  r=r*0.45|0; g=g*0.45|0; b=b*0.45|0; return `rgb(${r},${g},${b})`;
+}
+
+/* ---------- 渲染循环 ---------- */
+function loop(now=performance.now()){
+  const dt=Math.min(48,Math.max(1,now-lastFrameAt));
+  lastFrameAt=now;
+  theta += (thetaTarget-theta)*0.16;
+  if(Math.abs(thetaTarget-theta)<0.05) theta=thetaTarget;
+  if(mode==='anim') advanceDisplay(dt);
+  draw();
+  updateThreeBoard();
+  requestAnimationFrame(loop);
+}
+
+/* ---------- 动画公共 ---------- */
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+function initDisp(){
+  disp={};
+  for(const b of balls){
+    const [x,y]=cellCenter(b.ir,b.ic);
+    disp[b.id]={x,y,vx:0,vy:0,alpha:1,exiting:false,r:b.ir,c:b.ic,trail:[]};
+  }
+}
+function addDisplayTrail(d,frame){
+  for(const trail of d.trail) trail.alpha-=0.025*frame;
+  d.trail=d.trail.filter(trail=>trail.alpha>0.025);
+  d.trail.push({x:d.x,y:d.y,alpha:d.exiting?0.5:0.28,r:d.exiting?8:5});
+  if(d.trail.length>12) d.trail.splice(0,d.trail.length-12);
+}
+function advanceDisplay(ms){
+  const frame=Math.min(4,Math.max(0.1,ms/16.667));
+  for(const id in disp){
+    const d=disp[id];
+    if(d.alpha<=0) continue;
+    if(d.exiting){
+      d.vy+=0.9*frame;
+      d.y+=d.vy*frame;
+      d.alpha=Math.max(0,d.alpha-0.018*frame);
+      addDisplayTrail(d,frame);
+      continue;
+    }
+    const [tx,ty]=cellCenter(d.r,d.c);
+    const dx=tx-d.x, dy=ty-d.y;
+    d.vx=(d.vx+dx*0.1*frame)*Math.pow(0.76,frame);
+    d.vy=(d.vy+dy*0.1*frame)*Math.pow(0.76,frame);
+    d.x+=d.vx*frame;
+    d.y+=d.vy*frame;
+    if(Math.abs(tx-d.x)<0.35&&Math.abs(ty-d.y)<0.35&&Math.abs(d.vx)+Math.abs(d.vy)<0.45){
+      d.x=tx; d.y=ty; d.vx=0; d.vy=0;
+    }else{
+      addDisplayTrail(d,frame);
+    }
+  }
+}
+function applyFrame(ev){
+  for(const id in ev.pos){ const p=ev.pos[id]; const d=disp[id]; if(!d) continue; if(p){ d.r=p[0]; d.c=p[1]; } }
+  for(const id of ev.exits){
+    if(disp[id]){ disp[id].exiting=true; disp[id].vx=0; disp[id].vy=0; }
+    dropSeq.push(id);
+  }
+}
+
+/* ---------- 自动演示 ---------- */
+async function play(){
+  exitVerify(true);
+  const sim=simulate(); const {record,events}=sim;
+  mode='anim'; const token=++playToken;
+  thetaTarget=0; theta=0;
+  initDisp(); dropSeq=[];
+  setResult('自动演示中…');
+  document.getElementById('seq').innerHTML='';
+  await sleep(400);
+  for(const ev of events){
+    if(token!==playToken) return;
+    if(ev.t==='rot'){ thetaTarget=ev.theta; await sleep(420); }
+    else { applyFrame(ev); await sleep(190); }
+  }
+  if(token!==playToken) return;
+  showResult(record,sim.score);
+}
+
+/* ---------- 逐步验证 ---------- */
+function highlightChip(k){ // k = 已完成次数，高亮下一个
+  document.querySelectorAll('#instrChips .chip').forEach((el,i)=>{
+    el.classList.toggle('done', i<k);
+    el.classList.toggle('cur', i===k);
+  });
+}
+async function verifyStart(){
+  exitVerify(true);
+  const sim=simulate();
+  vEvents=sim.events; vScore=sim.score; vPtr=0; vStep=0; vRecord=[];
+  mode='anim'; verifying=true; playToken++;
+  theta=0; thetaTarget=0;
+  initDisp(); dropSeq=[];
+  document.getElementById('verifyBar').style.display='block';
+  document.getElementById('nextBtn').disabled=false;
+  document.getElementById('seq').innerHTML='';
+  setResult('逐步验证 · 初始静置…');
+  verifyBusy=true;
+  await consumeSettles();
+  verifyBusy=false;
+  updateStepInfo();
+  highlightChip(0);
+}
+async function consumeSettles(){
+  while(vPtr<vEvents.length && vEvents[vPtr].t==='set'){
+    const ev=vEvents[vPtr++];
+    applyFrame(ev);
+    for(const id of ev.exits){ vRecord.push(id); }
+    renderSeq(vRecord);
+    await sleep(200);
+  }
+}
+function updateStepInfo(){
+  const info=document.getElementById('stepInfo');
+  const nextBtn=document.getElementById('nextBtn');
+  if(vStep>=instr.length){
+    info.textContent=`已完成全部 ${instr.length} 次旋转`;
+    nextBtn.disabled=true;
+    return;
+  }
+  const nx=instr[vStep]===1?'↻ 顺时针':'↺ 逆时针';
+  info.textContent=`已完成 ${vStep} / ${instr.length} 次 ｜ 下一次：第 ${vStep+1} 次 ${nx}`;
+  nextBtn.textContent=`下一步 ${instr[vStep]===1?'↻':'↺'}`;
+}
+async function verifyNext(){
+  if(verifyBusy||!verifying||vStep>=instr.length) return;
+  verifyBusy=true;
+  const ev=vEvents[vPtr++];        // 必为 rot
+  thetaTarget=ev.theta;
+  setResult(`第 ${vStep+1} 次旋转：${instr[vStep]===1?'↻ 顺时针':'↺ 逆时针'} 90°…`);
+  await sleep(460);
+  await consumeSettles();
+  vStep++;
+  verifyBusy=false;
+  updateStepInfo();
+  highlightChip(vStep);
+  if(vStep>=instr.length){
+    showResult(vRecord,vScore);
+  }else{
+    setResult(`第 ${vStep} 次完成，珠子已稳定。已掉落 ${vRecord.length} 颗。`);
+  }
+}
+function exitVerify(silent){
+  verifying=false; verifyBusy=false;
+  document.getElementById('verifyBar').style.display='none';
+  highlightChip(-1);
+  if(!silent) enterDesign();
+}
+
+/* ---------- 编辑/快速 ---------- */
+function quick(){
+  const sim=simulate();
+  dropSeq=sim.record.slice();
+  showResult(sim.record,sim.score);
+}
+function enterDesign(){
+  playToken++; exitVerify(true);
+  mode='design'; thetaTarget=0; theta=0; dropSeq=[];
+  setResult('摆墙模式：点格子边线增减普通内墙');
+  document.getElementById('seq').innerHTML='';
+}
+
+/* ---------- 交互：画墙 / 拖珠 / 移出口 ---------- */
+function toMaze(evt){
+  const rect=cv.getBoundingClientRect();
+  const mx=(evt.clientX-rect.left)*(cv.width/rect.width);
+  const my=(evt.clientY-rect.top)*(cv.height/rect.height);
+  return [mx-CX-OX, my-CY-OY];
+}
+function pickEdge(x,y){
+  const s=BOARD/N; const gx=x/s, gy=y/s;
+  if(gx<-0.4||gy<-0.4||gx>N+0.4||gy>N+0.4) return null;
+  const col=Math.round(gx), row=Math.round(gy);
+  const dv=Math.abs(gx-col), dh=Math.abs(gy-row);
+  const th=0.34;
+  if(dv<dh){
+    const r=Math.floor(gy);
+    if(dv<th && col>=1 && col<=N-1 && r>=0 && r<N) return {type:'v', r, c:col};
+  }else{
+    const c=Math.floor(gx);
+    if(dh<th && c>=0 && c<N){
+      if(row>=1 && row<=N-1) return {type:'h', r:row, c};
+    }
+  }
+  return null;
+}
+function ballAt(x,y){
+  const s=BOARD/N;
+  for(const b of balls){ const [cx,cy]=cellCenter(b.ir,b.ic);
+    if((x+OX-cx)**2+(y+OY-cy)**2 < (s*0.36)**2) return b; }
+  return null;
+}
+cv.addEventListener('mousedown',e=>{
+  if(mode!=='design') return;
+});
+cv.addEventListener('mousemove',e=>{
+  if(mode!=='design') return;
+  const [x,y]=toMaze(e); const mx=x+OX,my=y+OY;
+  if(dragId){ dragXY=[mx,my]; hoverEdge=null; return; }
+  const eg=pickEdge(x,y);
+  hoverEdge = (eg && eg.type!=='exit')? {type:eg.type, r:eg.r, c:eg.c} : null;
+});
+window.addEventListener('mouseup',e=>{
+  dragId=null; dragXY=null;
+});
+cv.addEventListener('click',e=>{
+  if(mode!=='design'||dragId) return;
+  const [x,y]=toMaze(e);
+  if(ballAt(x,y)) return;
+  const eg=pickEdge(x,y);
+  if(!eg) return;
+  if(eg.type==='h'||eg.type==='v'){
+    if(!toggleInternalWall(eg.type,eg.r,eg.c)) setResult('橙色承托墙属于题面固定墙，不能删除');
+  }
+});
+cv.addEventListener('mouseleave',()=>{hoverEdge=null;});
+
+/* ---------- 右侧面板 ---------- */
+function buildInstr(){
+  const box=document.getElementById('instrChips'); box.innerHTML='';
+  instr.forEach((v,i)=>{
+    const d=document.createElement('div');
+    d.className='chip '+(v===1?'cw':'ccw');
+    d.innerHTML=`<span class="n">${i+1}</span>${v===1?'↻':'↺'}`;
+    box.appendChild(d);
+  });
+}
+function buildTarget(){
+  const box=document.getElementById('targetBox'); box.innerHTML='';
+  target.forEach((id,i)=>{
+    const c=colOf(id);
+    const item=document.createElement('span'); item.className='targetItem';
+    const swatch=document.createElement('span'); swatch.className='swatch'; swatch.style.background=c.css;
+    const label=document.createElement('span'); label.textContent=c.name;
+    item.appendChild(swatch); item.appendChild(label); box.appendChild(item);
+    if(i<target.length-1){ const a=document.createElement('span'); a.textContent='→'; a.style.color='#8ea2c4'; box.appendChild(a); }
+  });
+  const note=document.createElement('div'); note.className='hint'; note.style.width='100%'; note.textContent='题面固定，不可修改。';
+  box.appendChild(note);
+}
+function validateTarget(){
+  const note=document.getElementById('tgtNote'); if(!note) return;
+  const uniq=new Set(target);
+  note.innerHTML = uniq.size===5 ? '' : '<span style="color:var(--bad)">⚠ 目标顺序应为 5 种颜色各一次（当前有重复）</span>';
+}
+
+/* ---------- 按钮 ---------- */
+document.getElementById('solveBtn').onclick=solve;
+document.getElementById('verifyBtn').onclick=verifyStart;
+document.getElementById('nextBtn').onclick=verifyNext;
+document.getElementById('exitVerifyBtn').onclick=()=>exitVerify(false);
+document.getElementById('playBtn').onclick=play;
+document.getElementById('quickBtn').onclick=()=>{ enterDesign(); quick(); };
+document.getElementById('sealBtn').onclick=()=>{
+  enterDesign();
+  const seal=sealPaths(hwall,vwall);
+  setResult(seal.ok
+    ? `🧱 已补 ${seal.added} 堵墙，把当前构造的所有滚动路径封成管道（掉落结果不变）`
+    : '<span style="color:var(--bad)">⚠ 封管后结果发生变化，请检查</span>');
+};
+document.getElementById('editBtn').onclick=enterDesign;
+document.getElementById('clearBtn').onclick=()=>{
+  if(mode!=='design') return;
+  clearInternalWalls();
+};
+document.getElementById('resetBtn').onclick=()=>{ initState();
+  document.getElementById('exitInfo').textContent=(exitCol+1); buildInstr(); buildTarget(); enterDesign(); };
+
+/* ---------- 启动 ---------- */
+initState(10);
+document.getElementById('exitInfo').textContent=(exitCol+1);
+buildInstr(); buildTarget(); enterDesign();
+if(window.THREE) initThreeBoard();
+else window.addEventListener('load',initThreeBoard,{once:true});
+loop();
+</script>
+</body>
+</html>

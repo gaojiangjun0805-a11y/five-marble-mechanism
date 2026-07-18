@@ -551,11 +551,19 @@ function evalWalls(hw,vw){
   // prox：没掉出的珠子离出口的总距离（越小越好），给"卡住的球"提供爬山梯度
   let prox=0;
   for(const b of sim.final) if(b.alive) prox += (N-1-b.r)+Math.abs(b.c-exitCol);
-  return {rec, prefix:p, drops:rec.length, lcs:lcsLen(rec,target), prox};
+  return {
+    rec,
+    prefix:p,
+    drops:rec.length,
+    lcs:lcsLen(rec,target),
+    prox,
+    completionStep:sim.score.completionStep,
+  };
 }
 // 剪墙：逐一尝试拆掉每堵内墙，结果不变就真的拆掉，直到拆无可拆
 function pruneWalls(hw,vw){
   const es=edgesList();
+  let baseline=evalWalls(hw,vw);
   let removed=true;
   while(removed){
     removed=false;
@@ -564,7 +572,11 @@ function pruneWalls(hw,vw){
       const has = e.t==='h'?hw[e.r][e.c]:vw[e.r][e.c];
       if(!has) continue;
       if(e.t==='h')hw[e.r][e.c]=false; else vw[e.r][e.c]=false;
-      if(evalWalls(hw,vw).prefix===5){ removed=true; }
+      const candidate=evalWalls(hw,vw);
+      if(candidate.prefix===5 && candidate.completionStep<=baseline.completionStep){
+        removed=true;
+        baseline=candidate;
+      }
       else { if(e.t==='h')hw[e.r][e.c]=true; else vw[e.r][e.c]=true; }
     }
   }
@@ -598,7 +610,10 @@ function sealPaths(hw,vw){
   return {added, ok: after===before};
 }
 // 两阶段搜索：A 先找"5颗全部掉出"的种子，B 在保持全掉出的前提下专攻顺序
-function metricOf(v){ return v.drops*10000 + v.prefix*1000 + v.lcs*50; }
+function metricOf(v){
+  const early=Number.isInteger(v.completionStep) ? (instr.length-v.completionStep+1)*100000 : 0;
+  return early + v.drops*10000 + v.prefix*1000 + v.lcs*50;
+}
 function noteBest(best,hw,vw,v){
   const m=metricOf(v);
   if(m>best.m){ best.m=m; best.prefix=v.prefix;
@@ -624,8 +639,11 @@ function phaseA(deadline, es, best, variant=0){
   }
   return null;
 }
-// 阶段B评分：顺序前缀为主，其次"下一颗需要的球"在实际序列里越靠前越好
+// 阶段B评分：先保证顺序，再把第五颗球尽可能提前放出。
 function scoreB(v){
+  if(v.prefix===5 && Number.isInteger(v.completionStep)){
+    return 1000000 + (instr.length-v.completionStep)*10000 + v.lcs*50;
+  }
   let s=v.prefix*1000+v.lcs*50;
   if(v.prefix<5){
     const idx=v.rec.indexOf(target[v.prefix]);
@@ -658,11 +676,15 @@ function edgesNearCells(cells){
 function phaseBStep(sess, deadline, es, best){
   const {hw,vw}=sess;
   while(performance.now()<deadline){
-    if(sess.cur.prefix===5) return true;
     sess.iter=(sess.iter||0)+1;
-    if(sess.cur.prefix!==sess.lastPrefix || sess.iter%150===0){
+    const solved=sess.cur.prefix===5;
+    if(solved && !sess.solvedAt) sess.solvedAt=performance.now();
+    if(solved && performance.now()-sess.solvedAt>=1800) return true;
+    if(!solved && (sess.cur.prefix!==sess.lastPrefix || sess.iter%150===0)){
       sess.tEdges=edgesNearCells(trackedCellsOf(hw,vw,target[sess.cur.prefix]));
       sess.lastPrefix=sess.cur.prefix;
+    }else if(solved && (!sess.tEdges || sess.iter%75===0)){
+      sess.tEdges=edgesNearCells(trackedCellsOf(hw,vw,target[target.length-1]));
     }
     const n=1+(Math.random()*2|0);
     const moved=[];
@@ -672,7 +694,11 @@ function phaseBStep(sess, deadline, es, best){
       toggleEdge(hw,vw,e); moved.push(e);
     }
     const nv=evalWalls(hw,vw);
-    if(nv.drops===5 && scoreB(nv)>=scoreB(sess.cur)){ sess.cur=nv; noteBest(best,hw,vw,nv); }
+    if(nv.drops===5 && scoreB(nv)>=scoreB(sess.cur)){
+      sess.cur=nv;
+      if(nv.prefix===5 && !sess.solvedAt) sess.solvedAt=performance.now();
+      noteBest(best,hw,vw,nv);
+    }
     else for(const e of moved) toggleEdge(hw,vw,e);
   }
   return sess.cur.prefix===5;

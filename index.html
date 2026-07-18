@@ -89,7 +89,7 @@
       <div class="player-rule"><b>题面</b><span>固定，不可改</span></div>
       <div class="player-rule"><b>操作</b><span>只摆盘内浅色墙</span></div>
       <div class="player-rule"><b>目标</b><span>20 步按序出五珠</span></div>
-      <div class="player-rule"><b>胜负</b><span>第 5 珠越早越高分</span></div>
+      <div class="player-rule"><b>胜负</b><span>步数 → 板块 → 用时</span></div>
     </div>
   </header>
 
@@ -107,7 +107,7 @@
         <div id="threeBoard" aria-label="三维木质旋转迷宫"></div>
       </div>
       <div class="row" style="margin-top:10px;justify-content:center;">
-        <button class="primary" id="solveBtn">🤖 生成解</button>
+        <button class="primary" id="solveBtn">🤖 生成 3 解</button>
         <button id="verifyBtn">⏭ 逐步验证</button>
         <button id="playBtn">▶ 自动演示</button>
         <button id="quickBtn" class="small">⚡ 快速结果</button>
@@ -133,7 +133,7 @@
       </div>
 
       <div class="panel" id="solutionsPanel" style="display:none;">
-        <h2>已生成的解</h2>
+        <h2>已生成的解 · 步数 → 板块 · ★当前最优</h2>
         <div class="row" id="solutionTabs"></div>
       </div>
     </div>
@@ -198,6 +198,7 @@ let dropSeq = [];              // 已掉出的珠子（画在出口下方）
 let solutionHistory = [], solutionFingerprints = new Set(), activeSolutionIndex = -1;
 let lastFrameAt = performance.now();
 let threeState = null;
+let attemptStartedAt = null, attemptFinishedAt = null;
 
 /* ---------- 初始化 ---------- */
 function initState(){
@@ -208,6 +209,7 @@ function initState(){
   target = FIXED_QUESTION.target.slice();
   const w = emptyWalls();
   hwall = w.hw; vwall = w.vw;
+  attemptStartedAt=null; attemptFinishedAt=null;
 }
 function fixedSupportEdges(){
   return balls.map(b=>({r:b.ir+1, c:b.ic}));
@@ -223,12 +225,14 @@ function toggleInternalWall(t,r,c){
   if(t==='h') hwall[r][c]=!hwall[r][c];
   else if(t==='v') vwall[r][c]=!vwall[r][c];
   else return false;
+  if(attemptStartedAt===null){ attemptStartedAt=performance.now(); attemptFinishedAt=null; }
   return true;
 }
 function clearInternalWalls(){
   for(let r=1;r<N;r++)for(let c=0;c<N;c++) if(!isFixedWall('h',r,c)) hwall[r][c]=false;
   for(let r=0;r<N;r++)for(let c=1;c<N;c++) vwall[r][c]=false;
   addFixedSupports(hwall);
+  attemptStartedAt=null; attemptFinishedAt=null;
 }
 function emptyWalls(){
   const hw = Array.from({length:N+1},()=>Array(N).fill(false));
@@ -329,6 +333,31 @@ function scoreRelease(record,releaseSteps){
     aheadBy:completed?instr.length-completionStep:null,
   };
 }
+function compareTeamScores(a,b){
+  const aDone=Boolean(a&&a.completed), bDone=Boolean(b&&b.completed);
+  if(aDone!==bDone) return aDone?-1:1;
+  if(!aDone) return 0;
+  const numberOrInfinity=value=>Number.isFinite(value)?value:Infinity;
+  return numberOrInfinity(a.completionStep)-numberOrInfinity(b.completionStep)
+    || numberOrInfinity(a.wallCount)-numberOrInfinity(b.wallCount)
+    || numberOrInfinity(a.completionTimeMs)-numberOrInfinity(b.completionTimeMs);
+}
+function formatElapsed(ms){
+  if(!Number.isFinite(ms)) return '未记录';
+  const tenths=Math.floor(ms/100)%10;
+  const wholeSeconds=Math.floor(ms/1000);
+  const minutes=Math.floor(wholeSeconds/60);
+  const seconds=String(wholeSeconds%60).padStart(2,'0');
+  return `${minutes}:${seconds}.${tenths}`;
+}
+function teamScore(score,hw=hwall,vw=vwall,completionTimeMs=null){
+  return {...score,wallCount:wallCount(hw,vw),completionTimeMs};
+}
+function finalizeTeamScore(score){
+  if(score&&score.completed&&attemptStartedAt!==null&&attemptFinishedAt===null) attemptFinishedAt=performance.now();
+  const elapsed=attemptStartedAt===null?null:Math.max(0,(attemptFinishedAt??performance.now())-attemptStartedAt);
+  return teamScore(score,hwall,vwall,elapsed);
+}
 
 /* ---------- 自动求解（搜索内墙布局） ---------- */
 function edgesList(){
@@ -345,14 +374,34 @@ function solutionFingerprint(hw,vw){
     .map(e=>`${e.t}:${e.r}:${e.c}`).join('|');
 }
 function solutionCount(){ return solutionHistory.length; }
+function scoreSolution(hw,vw){
+  const oh=hwall, ov=vwall;
+  hwall=hw; vwall=vw;
+  const score=simulate().score;
+  hwall=oh; vwall=ov;
+  return teamScore(score,hw,vw,null);
+}
 function storeSolution(hw,vw){
   const fingerprint=solutionFingerprint(hw,vw);
   if(solutionFingerprints.has(fingerprint)) return false;
   const copy=cloneWalls(hw,vw);
   addFixedSupports(copy.hw);
   solutionFingerprints.add(fingerprint);
-  solutionHistory.push({...copy, fingerprint});
+  solutionHistory.push({...copy, fingerprint, score:scoreSolution(copy.hw,copy.vw)});
   return true;
+}
+function bestSolutionIndex(){
+  if(!solutionHistory.length) return -1;
+  let best=0;
+  for(let index=1;index<solutionHistory.length;index++){
+    if(compareTeamScores(solutionHistory[index].score,solutionHistory[best].score)<0) best=index;
+  }
+  return best;
+}
+function formatSolutionScore(score){
+  return score&&score.completed
+    ? `${score.completionStep} 步 · ${score.wallCount} 块板`
+    : `${score?.wallCount??0} 块板 · 未完赛`;
 }
 function matchesTarget(hw,vw){
   const value=evalWalls(hw,vw);
@@ -427,6 +476,7 @@ function loadSolution(index){
   const copy=cloneWalls(solution.hw,solution.vw);
   addFixedSupports(copy.hw);
   hwall=copy.hw; vwall=copy.vw; activeSolutionIndex=index;
+  attemptStartedAt=null; attemptFinishedAt=null;
   renderSolutionHistory();
   return true;
 }
@@ -436,10 +486,11 @@ function renderSolutionHistory(){
   if(!panel||!tabs) return;
   panel.style.display=solutionHistory.length?'block':'none';
   tabs.innerHTML='';
+  const bestIndex=bestSolutionIndex();
   solutionHistory.forEach((solution,index)=>{
     const button=document.createElement('button');
     button.className='small'+(index===activeSolutionIndex?' sizeBtn active':'');
-    button.textContent=`方案 ${index+1} · ${wallCount(solution.hw,solution.vw)} 堵墙`;
+    button.textContent=`${index===bestIndex?'★ 最优 · ':''}方案 ${index+1} · ${formatSolutionScore(solution.score)}`;
     button.onclick=()=>{ loadSolution(index); quick(); };
     tabs.appendChild(button);
   });
@@ -597,15 +648,17 @@ function phaseBStep(sess, deadline, es, best){
 async function solve(){
   if(solving) { solving=false; return; }   // 再点一次 = 取消
   enterDesign();
+  attemptStartedAt=null; attemptFinishedAt=null;
   const uniq=new Set(target);
   if(uniq.size!==5){ setResult('<span style="color:var(--bad)">目标顺序有重复颜色，先改好目标再求解</span>'); return; }
   solving=true; const token=++solveToken;
   const btn=document.getElementById('solveBtn');
   btn.textContent='⏹ 生成中…点击取消';
+  const batchSize=3;
   const es=edgesList();
   const best={m:-1e9, prefix:-1, hw:null, vw:null};
-  let sess=null, seeds=0, branches=0, duplicates=0, generatedIndex=-1;
-  const t0=performance.now(), TOTAL=60000;
+  let sess=null, seeds=0, branches=0, duplicates=0, generatedIndices=[];
+  const t0=performance.now(), TOTAL=45000;
   while(solving && token===solveToken && performance.now()-t0<TOTAL){
     const slice=performance.now()+350;
     if(!sess){
@@ -616,8 +669,10 @@ async function solve(){
         const candidate=cloneWalls(sess.hw,sess.vw);
         pruneWalls(candidate.hw,candidate.vw);
         if(acceptGeneratedSolution(candidate.hw,candidate.vw)){
-          generatedIndex=solutionHistory.length-1;
-          break;
+          generatedIndices.push(solutionHistory.length-1);
+          sess=null;
+          if(generatedIndices.length>=batchSize) break;
+          continue;
         }
         duplicates++;
         sess=null;
@@ -626,19 +681,21 @@ async function solve(){
       // 种子寿命自适应：顺序对得越多，越值得多花时间继续调
       if(performance.now()-sess.born > 2500 + sess.cur.prefix*1500) sess=null;
     }
-    setResult(`🤖 逆向分支生成中… ${((performance.now()-t0)/1000).toFixed(1)}s ｜ 已试 ${seeds} 个种子 ｜ 已跳过 ${duplicates} 个重复方案 ｜ 最好：前 ${Math.max(best.prefix,0)} 颗正确`);
+    setResult(`🤖 逆向分支生成中… 已收集 ${generatedIndices.length} / ${batchSize} 套 ｜ ${((performance.now()-t0)/1000).toFixed(1)}s ｜ 已试 ${seeds} 个种子 ｜ 已跳过 ${duplicates} 个重复方案 ｜ 最好：前 ${Math.max(best.prefix,0)} 颗正确`);
     await sleep(0);
   }
   if(token!==solveToken) return;
   solving=false;
-  btn.textContent='🤖 生成解';
-  if(generatedIndex>=0){
-    loadSolution(generatedIndex);
+  btn.textContent='🤖 再生成 3 解';
+  if(generatedIndices.length){
+    const bestIndex=bestSolutionIndex();
+    loadSolution(bestIndex);
     const sim=simulate();
     renderSeq(sim.record);
-    setResult(`<span style="color:var(--ok)">✓ 已生成方案 ${generatedIndex+1}：${wallCount(hwall,vwall)} 堵普通内墙，已通过完整回放和封管校验。</span> ｜ <b>${formatRaceScore(sim.score)}</b>`);
+    const bestSolution=solutionHistory[bestIndex];
+    setResult(`<span style="color:var(--ok)">✓ 本次新增 ${generatedIndices.length} 套可行方案，已通过完整回放和封管校验。</span> ｜ <b>当前最优：方案 ${bestIndex+1} · ${formatSolutionScore(bestSolution.score)}</b>`);
   }else{
-    setResult(`<span style="color:var(--bad)">60 秒内未找到新的有效方案。当前已保留 ${solutionHistory.length} 套已验证方案，点击“生成解”会继续搜索不同分支。</span>`);
+    setResult(`<span style="color:var(--bad)">45 秒内未找到新的有效方案。当前已保留 ${solutionHistory.length} 套已验证方案，点击“再生成 3 解”会继续搜索不同分支。</span>`);
   }
 }
 
@@ -655,18 +712,18 @@ function renderSeq(record){
 }
 function formatRaceScore(score){
   return score&&score.completed
-    ? `竞速成绩：第 ${score.completionStep} / ${instr.length} 步完赛，提前 ${score.aheadBy} 步`
-    : '竞速成绩：无有效成绩';
+    ? `评判成绩：${score.completionStep} 步 ｜ ${score.wallCount??0} 块板 ｜ 用时 ${formatElapsed(score.completionTimeMs)}`
+    : '评判成绩：未按序完赛';
 }
 function showResult(record,score){
   renderSeq(record);
   const dropped=record.join(''), want=target.join('');
   if(record.length<5){
-    setResult(`<span style="color:var(--bad)">✗ 只掉出 ${record.length} 颗，还有珠子留在迷宫里</span> ｜ ${formatRaceScore(score)}`);
+    setResult(`<span style="color:var(--bad)">✗ 只掉出 ${record.length} 颗，还有珠子留在迷宫里</span> ｜ ${formatRaceScore(teamScore(score))}`);
   }else if(dropped===want){
-    setResult(`<span style="color:var(--ok)">✓ 成功！掉落顺序与目标一致</span> ｜ <b>${formatRaceScore(score)}</b>`);
+    setResult(`<span style="color:var(--ok)">✓ 成功！掉落顺序与目标一致</span> ｜ <b>${formatRaceScore(finalizeTeamScore(score))}</b>`);
   }else{
-    setResult(`<span style="color:var(--bad)">✗ 顺序不符（目标 ${target.map(id=>colOf(id).name).join('')}）</span> ｜ ${formatRaceScore(score)}`);
+    setResult(`<span style="color:var(--bad)">✗ 顺序不符（目标 ${target.map(id=>colOf(id).name).join('')}）</span> ｜ ${formatRaceScore(teamScore(score))}`);
   }
 }
 

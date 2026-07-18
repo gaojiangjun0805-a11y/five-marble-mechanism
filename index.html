@@ -1260,6 +1260,7 @@ function loop(now=performance.now()){
   theta += (thetaTarget-theta)*0.16;
   if(Math.abs(thetaTarget-theta)<0.05) theta=thetaTarget;
   if(mode==='anim') advanceDisplay(dt);
+  if(comparisonState) advanceComparisonDisplay(dt);
   draw();
   updateThreeBoard();
   updateComparisonBoards();

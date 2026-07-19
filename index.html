@@ -220,6 +220,7 @@ let dropSeq = [];              // 已掉出的珠子（画在出口下方）
 let solutionHistory = [], solutionFingerprints = new Set(), activeSolutionIndex = -1;
 let lastFrameAt = performance.now();
 let threeState = null;
+let threePhysics = null;
 let attemptStartedAt = null, attemptFinishedAt = null;
 let comparisonState = null;
 
@@ -923,6 +924,7 @@ function initThreeBoard(){
       });
     });
     threeState={THREE,renderer,scene,camera,stage,boardGroup,wallGroup,ballMeshes,trailMeshes,wallSignature:''};
+    threePhysics=makeRotationalPhysics();
     const resize=()=>{
       if(!threeState) return;
       const rect=stage.getBoundingClientRect();
@@ -937,26 +939,78 @@ function initThreeBoard(){
     threeState=null;
   }
 }
-function updateThreeBoard(){
+function rotationalInertialAcceleration(x,y,omega,alpha){
+  const centrifugalX=omega*omega*x;
+  const centrifugalY=omega*omega*y;
+  const eulerX=alpha*y;
+  const eulerY=-alpha*x;
+  return {
+    centrifugalX, centrifugalY, eulerX, eulerY,
+    x:centrifugalX+eulerX,
+    y:centrifugalY+eulerY,
+  };
+}
+function makeRotationalPhysics(){
+  return {rotation:{theta:null,omega:0},balls:{}};
+}
+function resetRotationalPhysics(state,theta=0){
+  if(!state) return;
+  state.rotation.theta=theta;
+  state.rotation.omega=0;
+  state.balls={};
+}
+function updateRotationalKinematics(state,theta,dtMs){
+  const dt=Math.max(0.001,Math.min(0.05,dtMs/1000));
+  const rotation=state.rotation;
+  const previousTheta=Number.isFinite(rotation.theta)?rotation.theta:theta;
+  const omega=(theta-previousTheta)*Math.PI/180/dt;
+  const alpha=(omega-rotation.omega)/dt;
+  rotation.theta=theta;
+  rotation.omega=omega;
+  return {omega,alpha,dt};
+}
+function advanceRotationalBall(state,id,shown,kinematics,dtMs){
+  if(!shown) return {x:0,y:0,vx:0,vy:0};
+  const ballState=state.balls[id] || (state.balls[id]={x:0,y:0,vx:0,vy:0});
+  const unit=BOARD/N;
+  const localX=shown.x/unit;
+  const localY=-shown.y/unit;
+  const force=rotationalInertialAcceleration(localX,localY,kinematics.omega,kinematics.alpha);
+  const dt=kinematics.dt;
+  // Contact/friction supplies the inward centripetal response while the
+  // rotating frame exposes centrifugal, Euler, and Coriolis components.
+  const contactK=24, damping=8, forceScale=0.024;
+  const ax=force.x*forceScale + 2*kinematics.omega*ballState.vy - contactK*ballState.x - damping*ballState.vx;
+  const ay=force.y*forceScale - 2*kinematics.omega*ballState.vx - contactK*ballState.y - damping*ballState.vy;
+  ballState.vx+=ax*dt; ballState.vy+=ay*dt;
+  ballState.x=Math.max(-0.24,Math.min(0.24,ballState.x+ballState.vx*dt));
+  ballState.y=Math.max(-0.24,Math.min(0.24,ballState.y+ballState.vy*dt));
+  return ballState;
+}
+function updateThreeBoard(dtMs=16.667){
   if(!threeState) return;
   const {boardGroup,ballMeshes,trailMeshes,renderer,scene,camera}=threeState;
   rebuildThreeWalls();
   boardGroup.rotation.z=-theta*Math.PI/180;
+  if(!threePhysics) threePhysics=makeRotationalPhysics();
+  if(mode!=='anim') resetRotationalPhysics(threePhysics,theta);
+  const kinematics=updateRotationalKinematics(threePhysics,theta,dtMs);
   const unit=BOARD/N;
   for(const ball of balls){
     const shown=mode==='anim'?disp[ball.id]:null;
     const mesh=ballMeshes[ball.id];
-    const point=shown?{x:shown.x/unit,y:-shown.y/unit}:{...cellToThree(ball.ir,ball.ic)};
+    const offset=shown?advanceRotationalBall(threePhysics,ball.id,shown,kinematics,dtMs):{x:0,y:0};
+    const point=shown?{x:shown.x/unit+offset.x,y:-shown.y/unit+offset.y}:{...cellToThree(ball.ir,ball.ic)};
     mesh.visible=!shown||shown.alpha>0;
     mesh.position.set(point.x,point.y,shown&&shown.exiting?0.9+(1-shown.alpha)*0.45:0.97);
-    mesh.rotation.x+=(shown?shown.vy:0)*0.045;
-    mesh.rotation.y+=(shown?shown.vx:0)*0.045;
+    mesh.rotation.x+=(shown?shown.vy+offset.vy:0)*0.045;
+    mesh.rotation.y+=(shown?shown.vx+offset.vx:0)*0.045;
     const trail=shown?.trail||[];
     trailMeshes[ball.id].forEach((ghost,index)=>{
       const mark=trail[index];
       ghost.visible=Boolean(mark)&&mesh.visible;
       if(mark){
-        ghost.position.set(mark.x/unit,-mark.y/unit,0.77);
+        ghost.position.set(mark.x/unit+offset.x,-mark.y/unit+offset.y,0.77);
         ghost.material.opacity=Math.min(0.42,mark.alpha*0.7);
         const scale=0.55+mark.alpha*0.9; ghost.scale.setScalar(scale);
       }
@@ -1045,7 +1099,7 @@ function makeComparisonSession(index,slot){
     ballMeshes[color.id]=boardGroup.getObjectByName(`ball-${color.id}`);
     trailMeshes[color.id]=Array.from({length:12},(_,trailIndex)=>boardGroup.getObjectByName(`trail-${color.id}-${trailIndex}`));
   });
-  const session={index,solution,sim:simulateForSolution(solution),renderer,scene,camera,boardGroup,ballMeshes,trailMeshes,host,width:0,height:0,ptr:0,disp:{},dropSeq:[],theta:0,thetaTarget:0};
+  const session={index,solution,sim:simulateForSolution(solution),renderer,scene,camera,boardGroup,ballMeshes,trailMeshes,host,width:0,height:0,ptr:0,disp:{},dropSeq:[],theta:0,thetaTarget:0,physics:makeRotationalPhysics()};
   resetComparisonSession(session);
   resizeComparisonSession(session);
   return session;
@@ -1059,6 +1113,7 @@ function withComparisonDisplay(session,fn){
 }
 function resetComparisonSession(session){
   session.ptr=0; session.theta=0; session.thetaTarget=0; session.dropSeq=[];
+  resetRotationalPhysics(session.physics,0);
   withComparisonDisplay(session,()=>initDisp());
 }
 function applyComparisonFrame(session,event){
@@ -1068,27 +1123,29 @@ function advanceComparisonDisplay(ms){
   if(!comparisonState?.verifying) return;
   comparisonState.sessions.forEach(session=>withComparisonDisplay(session,()=>advanceDisplay(ms)));
 }
-function updateComparisonBoard(session){
+function updateComparisonBoard(session,dtMs=16.667){
   resizeComparisonSession(session);
   session.theta+=(session.thetaTarget-session.theta)*0.16;
   if(Math.abs(session.thetaTarget-session.theta)<0.05) session.theta=session.thetaTarget;
   session.boardGroup.rotation.z=-session.theta*Math.PI/180;
+  const kinematics=updateRotationalKinematics(session.physics,session.theta,dtMs);
   const unit=BOARD/N;
   for(const ball of balls){
     const shown=session.disp[ball.id];
     const mesh=session.ballMeshes[ball.id];
     if(!mesh) continue;
-    const point=shown?{x:shown.x/unit,y:-shown.y/unit}:{...cellToThree(ball.ir,ball.ic)};
+    const offset=shown?advanceRotationalBall(session.physics,ball.id,shown,kinematics,dtMs):{x:0,y:0};
+    const point=shown?{x:shown.x/unit+offset.x,y:-shown.y/unit+offset.y}:{...cellToThree(ball.ir,ball.ic)};
     mesh.visible=!shown||shown.alpha>0;
     mesh.position.set(point.x,point.y,shown&&shown.exiting?0.9+(1-shown.alpha)*0.45:0.97);
-    mesh.rotation.x+=(shown?.vy||0)*0.045;
-    mesh.rotation.y+=(shown?.vx||0)*0.045;
+    mesh.rotation.x+=((shown?.vy||0)+offset.vy)*0.045;
+    mesh.rotation.y+=((shown?.vx||0)+offset.vx)*0.045;
     (session.trailMeshes[ball.id]||[]).forEach((ghost,trailIndex)=>{
       if(!ghost) return;
       const mark=shown?.trail?.[trailIndex];
       ghost.visible=Boolean(mark)&&mesh.visible;
       if(mark){
-        ghost.position.set(mark.x/unit,-mark.y/unit,0.77);
+        ghost.position.set(mark.x/unit+offset.x,-mark.y/unit+offset.y,0.77);
         ghost.material.opacity=Math.min(0.42,mark.alpha*0.7);
         ghost.scale.setScalar(0.55+mark.alpha*0.9);
       }
@@ -1096,8 +1153,8 @@ function updateComparisonBoard(session){
   }
   session.renderer.render(session.scene,session.camera);
 }
-function updateComparisonBoards(){
-  comparisonState?.sessions.forEach(updateComparisonBoard);
+function updateComparisonBoards(dtMs=16.667){
+  comparisonState?.sessions.forEach(session=>updateComparisonBoard(session,dtMs));
 }
 function activateComparison(indices){
   if(!window.THREE||!threeState) return false;
@@ -1288,8 +1345,8 @@ function loop(now=performance.now()){
   if(mode==='anim') advanceDisplay(dt);
   if(comparisonState) advanceComparisonDisplay(dt);
   draw();
-  updateThreeBoard();
-  updateComparisonBoards();
+  updateThreeBoard(dt);
+  updateComparisonBoards(dt);
   requestAnimationFrame(loop);
 }
 

@@ -993,12 +993,12 @@ function advanceRotationalBall(state,id,shown,kinematics,dtMs){
   const dt=kinematics.dt;
   // Contact/friction supplies the inward centripetal response while the
   // rotating frame exposes centrifugal, Euler, and Coriolis components.
-  const contactK=24, damping=8, forceScale=0.024;
+  const contactK=7, damping=5, forceScale=0.035;
   const ax=force.x*forceScale + 2*kinematics.omega*ballState.vy - contactK*ballState.x - damping*ballState.vx;
   const ay=force.y*forceScale - 2*kinematics.omega*ballState.vx - contactK*ballState.y - damping*ballState.vy;
   ballState.vx+=ax*dt; ballState.vy+=ay*dt;
-  ballState.x=Math.max(-0.24,Math.min(0.24,ballState.x+ballState.vx*dt));
-  ballState.y=Math.max(-0.24,Math.min(0.24,ballState.y+ballState.vy*dt));
+  ballState.x=Math.max(-0.46,Math.min(0.46,ballState.x+ballState.vx*dt));
+  ballState.y=Math.max(-0.46,Math.min(0.46,ballState.y+ballState.vy*dt));
   return ballState;
 }
 function resolveVisualBallContacts(points,radius=0.31){
@@ -1041,6 +1041,7 @@ function collectVisualBallPoints(physics,shownMap,kinematics,dtMs,wallState={hw:
   });
   points.forEach(point=>constrainVisualBallToWalls(point,point.shown,0.31,wallState));
   resolveVisualBallContacts(points);
+  points.forEach(point=>constrainVisualBallToWalls(point,point.shown,0.31,wallState));
   points.forEach(point=>{
     if(!point.shown) return;
     point.offset.x=point.x-point.baseX;

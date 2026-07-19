@@ -220,7 +220,6 @@ let dropSeq = [];              // 已掉出的珠子（画在出口下方）
 let solutionHistory = [], solutionFingerprints = new Set(), activeSolutionIndex = -1;
 let lastFrameAt = performance.now();
 let threeState = null;
-let threePhysics = null;
 let attemptStartedAt = null, attemptFinishedAt = null;
 let comparisonState = null;
 
@@ -935,7 +934,6 @@ function initThreeBoard(){
       });
     });
     threeState={THREE,renderer,scene,camera,stage,boardGroup,wallGroup,ballMeshes,trailMeshes,shadowMeshes,wallSignature:''};
-    threePhysics=makeRotationalPhysics();
     const resize=()=>{
       if(!threeState) return;
       const rect=stage.getBoundingClientRect();
@@ -950,134 +948,33 @@ function initThreeBoard(){
     threeState=null;
   }
 }
-function rotationalInertialAcceleration(x,y,omega,alpha){
-  const centrifugalX=omega*omega*x;
-  const centrifugalY=omega*omega*y;
-  const eulerX=alpha*y;
-  const eulerY=-alpha*x;
-  return {
-    centrifugalX, centrifugalY, eulerX, eulerY,
-    x:centrifugalX+eulerX,
-    y:centrifugalY+eulerY,
-  };
-}
 function threeBallContactSpec(){
   return {floorTop:0.44, radius:0.31, centerZ:0.75, shadowZ:0.455, shadowRadius:0.36};
 }
-function makeRotationalPhysics(){
-  return {rotation:{theta:null,omega:0},balls:{}};
-}
-function resetRotationalPhysics(state,theta=0){
-  if(!state) return;
-  state.rotation.theta=theta;
-  state.rotation.omega=0;
-  state.balls={};
-}
-function updateRotationalKinematics(state,theta,dtMs){
-  const dt=Math.max(0.001,Math.min(0.05,dtMs/1000));
-  const rotation=state.rotation;
-  const previousTheta=Number.isFinite(rotation.theta)?rotation.theta:theta;
-  const omega=(theta-previousTheta)*Math.PI/180/dt;
-  const alpha=(omega-rotation.omega)/dt;
-  rotation.theta=theta;
-  rotation.omega=omega;
-  return {omega,alpha,dt};
-}
-function advanceRotationalBall(state,id,shown,kinematics,dtMs){
-  if(!shown) return {x:0,y:0,vx:0,vy:0};
-  const ballState=state.balls[id] || (state.balls[id]={x:0,y:0,vx:0,vy:0});
-  const unit=BOARD/N;
-  const localX=shown.x/unit;
-  const localY=-shown.y/unit;
-  const force=rotationalInertialAcceleration(localX,localY,kinematics.omega,kinematics.alpha);
-  const dt=kinematics.dt;
-  // Contact/friction supplies the inward centripetal response while the
-  // rotating frame exposes centrifugal, Euler, and Coriolis components.
-  const contactK=7, damping=5, forceScale=0.035;
-  const ax=force.x*forceScale + 2*kinematics.omega*ballState.vy - contactK*ballState.x - damping*ballState.vx;
-  const ay=force.y*forceScale - 2*kinematics.omega*ballState.vx - contactK*ballState.y - damping*ballState.vy;
-  ballState.vx+=ax*dt; ballState.vy+=ay*dt;
-  ballState.x=Math.max(-0.46,Math.min(0.46,ballState.x+ballState.vx*dt));
-  ballState.y=Math.max(-0.46,Math.min(0.46,ballState.y+ballState.vy*dt));
-  return ballState;
-}
-function resolveVisualBallContacts(points,radius=0.31){
-  const minimumDistance=radius*2;
-  for(let pass=0;pass<3;pass++){
-    for(let i=0;i<points.length;i++) for(let j=i+1;j<points.length;j++){
-      const first=points[i], second=points[j];
-      let dx=second.x-first.x, dy=second.y-first.y;
-      let distance=Math.hypot(dx,dy);
-      if(distance>=minimumDistance) continue;
-      if(distance<1e-6){
-        const seed=((first.id.charCodeAt(0)+second.id.charCodeAt(0))%8)*Math.PI/4;
-        dx=Math.cos(seed); dy=Math.sin(seed); distance=1;
-      }
-      const correction=(minimumDistance-distance)/2;
-      const nx=dx/distance, ny=dy/distance;
-      first.x-=nx*correction; first.y-=ny*correction;
-      second.x+=nx*correction; second.y+=ny*correction;
-    }
-  }
-  return points;
-}
-function constrainVisualBallToWalls(point,shown,radius=0.31,wallState={hw:hwall,vw:vwall}){
-  if(!shown||shown.exiting) return point;
-  const center=cellToThree(shown.r,shown.c);
-  const wallThickness=0.15;
-  const room=0.5-radius-wallThickness/2;
-  if(wallState.vw[shown.r][shown.c]) point.x=Math.max(point.x,center.x-room);
-  if(wallState.vw[shown.r][shown.c+1]) point.x=Math.min(point.x,center.x+room);
-  if(wallState.hw[shown.r][shown.c]) point.y=Math.min(point.y,center.y+room);
-  if(wallState.hw[shown.r+1][shown.c]) point.y=Math.max(point.y,center.y-room);
-  return point;
-}
-function collectVisualBallPoints(physics,shownMap,kinematics,dtMs,wallState={hw:hwall,vw:vwall}){
-  const points=balls.map(ball=>{
-    const shown=shownMap[ball.id];
-    const base=shown?cellToThree(shown.r,shown.c):cellToThree(ball.ir,ball.ic);
-    const offset=shown?advanceRotationalBall(physics,ball.id,shown,kinematics,dtMs):{x:0,y:0,vx:0,vy:0};
-    return {id:ball.id,shown,offset,baseX:base.x,baseY:base.y,x:base.x+offset.x,y:base.y+offset.y};
-  });
-  points.forEach(point=>constrainVisualBallToWalls(point,point.shown,0.31,wallState));
-  resolveVisualBallContacts(points);
-  points.forEach(point=>constrainVisualBallToWalls(point,point.shown,0.31,wallState));
-  points.forEach(point=>{
-    if(!point.shown) return;
-    point.offset.x=point.x-point.baseX;
-    point.offset.y=point.y-point.baseY;
-  });
-  return points;
-}
-function updateThreeBoard(dtMs=16.667){
+function updateThreeBoard(){
   if(!threeState) return;
   const {boardGroup,ballMeshes,trailMeshes,shadowMeshes,renderer,scene,camera}=threeState;
   rebuildThreeWalls();
   boardGroup.rotation.z=-theta*Math.PI/180;
-  if(!threePhysics) threePhysics=makeRotationalPhysics();
-  if(mode!=='anim') resetRotationalPhysics(threePhysics,theta);
-  const kinematics=updateRotationalKinematics(threePhysics,theta,dtMs);
   const unit=BOARD/N;
-  const shownMap=mode==='anim'?disp:{};
-  const points=collectVisualBallPoints(threePhysics,shownMap,kinematics,dtMs,{hw:hwall,vw:vwall});
-  for(const point of points){
-    const ball=balls.find(item=>item.id===point.id);
-    const shown=point.shown;
+  for(const ball of balls){
+    const shown=mode==='anim'?disp[ball.id]:null;
     const mesh=ballMeshes[ball.id];
     const contactShadow=shadowMeshes[ball.id];
+    const point=shown?{x:shown.x/unit,y:-shown.y/unit}:cellToThree(ball.ir,ball.ic);
     mesh.visible=!shown||shown.alpha>0;
     mesh.position.set(point.x,point.y,shown&&shown.exiting?0.75+(1-shown.alpha)*0.45:threeBallContactSpec().centerZ);
     contactShadow.visible=mesh.visible;
     contactShadow.position.set(point.x,point.y,threeBallContactSpec().shadowZ);
-    contactShadow.scale.set(1+Math.min(0.2,Math.abs(point.offset.vx)+Math.abs(point.offset.vy)*0.08),1,1);
-    mesh.rotation.x+=(shown?shown.vy+point.offset.vy:0)*0.045;
-    mesh.rotation.y+=(shown?shown.vx+point.offset.vx:0)*0.045;
+    contactShadow.scale.set(1,1,1);
+    mesh.rotation.x+=(shown?.vy||0)*0.045;
+    mesh.rotation.y+=(shown?.vx||0)*0.045;
     const trail=shown?.trail||[];
     trailMeshes[ball.id].forEach((ghost,index)=>{
       const mark=trail[index];
       ghost.visible=Boolean(mark)&&mesh.visible;
       if(mark){
-        ghost.position.set(mark.x/unit+point.offset.x,-mark.y/unit+point.offset.y,0.58);
+        ghost.position.set(mark.x/unit,-mark.y/unit,0.58);
         ghost.material.opacity=Math.min(0.42,mark.alpha*0.7);
         const scale=0.55+mark.alpha*0.9; ghost.scale.setScalar(scale);
       }
@@ -1167,7 +1064,7 @@ function makeComparisonSession(index,slot){
     shadowMeshes[color.id]=boardGroup.getObjectByName(`contact-shadow-${color.id}`);
     trailMeshes[color.id]=Array.from({length:12},(_,trailIndex)=>boardGroup.getObjectByName(`trail-${color.id}-${trailIndex}`));
   });
-  const session={index,solution,sim:simulateForSolution(solution),renderer,scene,camera,boardGroup,ballMeshes,trailMeshes,shadowMeshes,host,width:0,height:0,ptr:0,disp:{},dropSeq:[],theta:0,thetaTarget:0,physics:makeRotationalPhysics()};
+  const session={index,solution,sim:simulateForSolution(solution),renderer,scene,camera,boardGroup,ballMeshes,trailMeshes,shadowMeshes,host,width:0,height:0,ptr:0,disp:{},dropSeq:[],theta:0,thetaTarget:0};
   resetComparisonSession(session);
   resizeComparisonSession(session);
   return session;
@@ -1181,7 +1078,6 @@ function withComparisonDisplay(session,fn){
 }
 function resetComparisonSession(session){
   session.ptr=0; session.theta=0; session.thetaTarget=0; session.dropSeq=[];
-  resetRotationalPhysics(session.physics,0);
   withComparisonDisplay(session,()=>initDisp());
 }
 function applyComparisonFrame(session,event){
@@ -1191,33 +1087,31 @@ function advanceComparisonDisplay(ms){
   if(!comparisonState?.verifying) return;
   comparisonState.sessions.forEach(session=>withComparisonDisplay(session,()=>advanceDisplay(ms)));
 }
-function updateComparisonBoard(session,dtMs=16.667){
+function updateComparisonBoard(session){
   resizeComparisonSession(session);
   session.theta+=(session.thetaTarget-session.theta)*0.16;
   if(Math.abs(session.thetaTarget-session.theta)<0.05) session.theta=session.thetaTarget;
   session.boardGroup.rotation.z=-session.theta*Math.PI/180;
-  const kinematics=updateRotationalKinematics(session.physics,session.theta,dtMs);
   const unit=BOARD/N;
-  const points=collectVisualBallPoints(session.physics,session.disp,kinematics,dtMs,session.solution);
-  for(const point of points){
-    const ball=balls.find(item=>item.id===point.id);
-    const shown=point.shown;
+  for(const ball of balls){
+    const shown=session.disp[ball.id];
     const mesh=session.ballMeshes[ball.id];
     const contactShadow=session.shadowMeshes[ball.id];
     if(!mesh) continue;
+    const point=shown?{x:shown.x/unit,y:-shown.y/unit}:cellToThree(ball.ir,ball.ic);
     mesh.visible=!shown||shown.alpha>0;
     mesh.position.set(point.x,point.y,shown&&shown.exiting?0.75+(1-shown.alpha)*0.45:threeBallContactSpec().centerZ);
     contactShadow.visible=mesh.visible;
     contactShadow.position.set(point.x,point.y,threeBallContactSpec().shadowZ);
-    contactShadow.scale.set(1+Math.min(0.2,Math.abs(point.offset.vx)+Math.abs(point.offset.vy)*0.08),1,1);
-    mesh.rotation.x+=((shown?.vy||0)+point.offset.vy)*0.045;
-    mesh.rotation.y+=((shown?.vx||0)+point.offset.vx)*0.045;
+    contactShadow.scale.set(1,1,1);
+    mesh.rotation.x+=(shown?.vy||0)*0.045;
+    mesh.rotation.y+=(shown?.vx||0)*0.045;
     (session.trailMeshes[ball.id]||[]).forEach((ghost,trailIndex)=>{
       if(!ghost) return;
       const mark=shown?.trail?.[trailIndex];
       ghost.visible=Boolean(mark)&&mesh.visible;
       if(mark){
-        ghost.position.set(mark.x/unit+point.offset.x,-mark.y/unit+point.offset.y,0.58);
+        ghost.position.set(mark.x/unit,-mark.y/unit,0.58);
         ghost.material.opacity=Math.min(0.42,mark.alpha*0.7);
         ghost.scale.setScalar(0.55+mark.alpha*0.9);
       }

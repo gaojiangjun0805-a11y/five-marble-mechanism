@@ -987,6 +987,53 @@ function advanceRotationalBall(state,id,shown,kinematics,dtMs){
   ballState.y=Math.max(-0.24,Math.min(0.24,ballState.y+ballState.vy*dt));
   return ballState;
 }
+function resolveVisualBallContacts(points,radius=0.31){
+  const minimumDistance=radius*2;
+  for(let pass=0;pass<3;pass++){
+    for(let i=0;i<points.length;i++) for(let j=i+1;j<points.length;j++){
+      const first=points[i], second=points[j];
+      let dx=second.x-first.x, dy=second.y-first.y;
+      let distance=Math.hypot(dx,dy);
+      if(distance>=minimumDistance) continue;
+      if(distance<1e-6){
+        const seed=((first.id.charCodeAt(0)+second.id.charCodeAt(0))%8)*Math.PI/4;
+        dx=Math.cos(seed); dy=Math.sin(seed); distance=1;
+      }
+      const correction=(minimumDistance-distance)/2;
+      const nx=dx/distance, ny=dy/distance;
+      first.x-=nx*correction; first.y-=ny*correction;
+      second.x+=nx*correction; second.y+=ny*correction;
+    }
+  }
+  return points;
+}
+function constrainVisualBallToWalls(point,shown,radius=0.31,wallState={hw:hwall,vw:vwall}){
+  if(!shown||shown.exiting) return point;
+  const center=cellToThree(shown.r,shown.c);
+  const wallThickness=0.15;
+  const room=0.5-radius-wallThickness/2;
+  if(wallState.vw[shown.r][shown.c]) point.x=Math.max(point.x,center.x-room);
+  if(wallState.vw[shown.r][shown.c+1]) point.x=Math.min(point.x,center.x+room);
+  if(wallState.hw[shown.r][shown.c]) point.y=Math.min(point.y,center.y+room);
+  if(wallState.hw[shown.r+1][shown.c]) point.y=Math.max(point.y,center.y-room);
+  return point;
+}
+function collectVisualBallPoints(physics,shownMap,kinematics,dtMs,wallState={hw:hwall,vw:vwall}){
+  const points=balls.map(ball=>{
+    const shown=shownMap[ball.id];
+    const base=shown?cellToThree(shown.r,shown.c):cellToThree(ball.ir,ball.ic);
+    const offset=shown?advanceRotationalBall(physics,ball.id,shown,kinematics,dtMs):{x:0,y:0,vx:0,vy:0};
+    return {id:ball.id,shown,offset,baseX:base.x,baseY:base.y,x:base.x+offset.x,y:base.y+offset.y};
+  });
+  points.forEach(point=>constrainVisualBallToWalls(point,point.shown,0.31,wallState));
+  resolveVisualBallContacts(points);
+  points.forEach(point=>{
+    if(!point.shown) return;
+    point.offset.x=point.x-point.baseX;
+    point.offset.y=point.y-point.baseY;
+  });
+  return points;
+}
 function updateThreeBoard(dtMs=16.667){
   if(!threeState) return;
   const {boardGroup,ballMeshes,trailMeshes,renderer,scene,camera}=threeState;
@@ -996,21 +1043,22 @@ function updateThreeBoard(dtMs=16.667){
   if(mode!=='anim') resetRotationalPhysics(threePhysics,theta);
   const kinematics=updateRotationalKinematics(threePhysics,theta,dtMs);
   const unit=BOARD/N;
-  for(const ball of balls){
-    const shown=mode==='anim'?disp[ball.id]:null;
+  const shownMap=mode==='anim'?disp:{};
+  const points=collectVisualBallPoints(threePhysics,shownMap,kinematics,dtMs,{hw:hwall,vw:vwall});
+  for(const point of points){
+    const ball=balls.find(item=>item.id===point.id);
+    const shown=point.shown;
     const mesh=ballMeshes[ball.id];
-    const offset=shown?advanceRotationalBall(threePhysics,ball.id,shown,kinematics,dtMs):{x:0,y:0};
-    const point=shown?{x:shown.x/unit+offset.x,y:-shown.y/unit+offset.y}:{...cellToThree(ball.ir,ball.ic)};
     mesh.visible=!shown||shown.alpha>0;
-    mesh.position.set(point.x,point.y,shown&&shown.exiting?0.9+(1-shown.alpha)*0.45:0.97);
-    mesh.rotation.x+=(shown?shown.vy+offset.vy:0)*0.045;
-    mesh.rotation.y+=(shown?shown.vx+offset.vx:0)*0.045;
+    mesh.position.set(point.x,point.y,shown&&shown.exiting?0.75+(1-shown.alpha)*0.45:0.75);
+    mesh.rotation.x+=(shown?shown.vy+point.offset.vy:0)*0.045;
+    mesh.rotation.y+=(shown?shown.vx+point.offset.vx:0)*0.045;
     const trail=shown?.trail||[];
     trailMeshes[ball.id].forEach((ghost,index)=>{
       const mark=trail[index];
       ghost.visible=Boolean(mark)&&mesh.visible;
       if(mark){
-        ghost.position.set(mark.x/unit+offset.x,-mark.y/unit+offset.y,0.77);
+        ghost.position.set(mark.x/unit+point.offset.x,-mark.y/unit+point.offset.y,0.58);
         ghost.material.opacity=Math.min(0.42,mark.alpha*0.7);
         const scale=0.55+mark.alpha*0.9; ghost.scale.setScalar(scale);
       }
@@ -1130,22 +1178,22 @@ function updateComparisonBoard(session,dtMs=16.667){
   session.boardGroup.rotation.z=-session.theta*Math.PI/180;
   const kinematics=updateRotationalKinematics(session.physics,session.theta,dtMs);
   const unit=BOARD/N;
-  for(const ball of balls){
-    const shown=session.disp[ball.id];
+  const points=collectVisualBallPoints(session.physics,session.disp,kinematics,dtMs,session.solution);
+  for(const point of points){
+    const ball=balls.find(item=>item.id===point.id);
+    const shown=point.shown;
     const mesh=session.ballMeshes[ball.id];
     if(!mesh) continue;
-    const offset=shown?advanceRotationalBall(session.physics,ball.id,shown,kinematics,dtMs):{x:0,y:0};
-    const point=shown?{x:shown.x/unit+offset.x,y:-shown.y/unit+offset.y}:{...cellToThree(ball.ir,ball.ic)};
     mesh.visible=!shown||shown.alpha>0;
-    mesh.position.set(point.x,point.y,shown&&shown.exiting?0.9+(1-shown.alpha)*0.45:0.97);
-    mesh.rotation.x+=((shown?.vy||0)+offset.vy)*0.045;
-    mesh.rotation.y+=((shown?.vx||0)+offset.vx)*0.045;
+    mesh.position.set(point.x,point.y,shown&&shown.exiting?0.75+(1-shown.alpha)*0.45:0.75);
+    mesh.rotation.x+=((shown?.vy||0)+point.offset.vy)*0.045;
+    mesh.rotation.y+=((shown?.vx||0)+point.offset.vx)*0.045;
     (session.trailMeshes[ball.id]||[]).forEach((ghost,trailIndex)=>{
       if(!ghost) return;
       const mark=shown?.trail?.[trailIndex];
       ghost.visible=Boolean(mark)&&mesh.visible;
       if(mark){
-        ghost.position.set(mark.x/unit+offset.x,-mark.y/unit+offset.y,0.77);
+        ghost.position.set(mark.x/unit+point.offset.x,-mark.y/unit+point.offset.y,0.58);
         ghost.material.opacity=Math.min(0.42,mark.alpha*0.7);
         ghost.scale.setScalar(0.55+mark.alpha*0.9);
       }

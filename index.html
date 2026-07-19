@@ -913,17 +913,22 @@ function initThreeBoard(){
     const ballGroup=new THREE.Group(); boardGroup.add(ballGroup);
     const ballGeometry=new THREE.SphereGeometry(0.31,28,18);
     const trailGeometry=new THREE.SphereGeometry(0.11,14,10);
+    const contact=threeBallContactSpec();
+    const shadowGeometry=new THREE.CircleGeometry(contact.shadowRadius,24);
+    const shadowMeshes={};
     const ballMeshes={}, trailMeshes={};
     COLORS.forEach(color=>{
       const material=new THREE.MeshPhysicalMaterial({color:color.css,metalness:0.7,roughness:0.2,clearcoat:0.85,clearcoatRoughness:0.14});
       const ball=new THREE.Mesh(ballGeometry,material); ball.name=`ball-${color.id}`; ball.castShadow=true; ball.receiveShadow=true; ballGroup.add(ball); ballMeshes[color.id]=ball;
+      const contactShadow=new THREE.Mesh(shadowGeometry,new THREE.MeshBasicMaterial({color:'#2b160b',transparent:true,opacity:0.28,depthWrite:false}));
+      contactShadow.name=`contact-shadow-${color.id}`; contactShadow.position.z=contact.shadowZ; contactShadow.renderOrder=1; ballGroup.add(contactShadow); shadowMeshes[color.id]=contactShadow;
       trailMeshes[color.id]=Array.from({length:12},(_,index)=>{
         const ghost=new THREE.Mesh(trailGeometry,new THREE.MeshBasicMaterial({color:color.css,transparent:true,opacity:0,depthWrite:false}));
         ghost.name=`trail-${color.id}-${index}`;
         ghost.visible=false; ballGroup.add(ghost); return ghost;
       });
     });
-    threeState={THREE,renderer,scene,camera,stage,boardGroup,wallGroup,ballMeshes,trailMeshes,wallSignature:''};
+    threeState={THREE,renderer,scene,camera,stage,boardGroup,wallGroup,ballMeshes,trailMeshes,shadowMeshes,wallSignature:''};
     threePhysics=makeRotationalPhysics();
     const resize=()=>{
       if(!threeState) return;
@@ -949,6 +954,9 @@ function rotationalInertialAcceleration(x,y,omega,alpha){
     x:centrifugalX+eulerX,
     y:centrifugalY+eulerY,
   };
+}
+function threeBallContactSpec(){
+  return {floorTop:0.44, radius:0.31, centerZ:0.75, shadowZ:0.455, shadowRadius:0.36};
 }
 function makeRotationalPhysics(){
   return {rotation:{theta:null,omega:0},balls:{}};
@@ -1036,7 +1044,7 @@ function collectVisualBallPoints(physics,shownMap,kinematics,dtMs,wallState={hw:
 }
 function updateThreeBoard(dtMs=16.667){
   if(!threeState) return;
-  const {boardGroup,ballMeshes,trailMeshes,renderer,scene,camera}=threeState;
+  const {boardGroup,ballMeshes,trailMeshes,shadowMeshes,renderer,scene,camera}=threeState;
   rebuildThreeWalls();
   boardGroup.rotation.z=-theta*Math.PI/180;
   if(!threePhysics) threePhysics=makeRotationalPhysics();
@@ -1049,8 +1057,12 @@ function updateThreeBoard(dtMs=16.667){
     const ball=balls.find(item=>item.id===point.id);
     const shown=point.shown;
     const mesh=ballMeshes[ball.id];
+    const contactShadow=shadowMeshes[ball.id];
     mesh.visible=!shown||shown.alpha>0;
-    mesh.position.set(point.x,point.y,shown&&shown.exiting?0.75+(1-shown.alpha)*0.45:0.75);
+    mesh.position.set(point.x,point.y,shown&&shown.exiting?0.75+(1-shown.alpha)*0.45:threeBallContactSpec().centerZ);
+    contactShadow.visible=mesh.visible;
+    contactShadow.position.set(point.x,point.y,threeBallContactSpec().shadowZ);
+    contactShadow.scale.set(1+Math.min(0.2,Math.abs(point.offset.vx)+Math.abs(point.offset.vy)*0.08),1,1);
     mesh.rotation.x+=(shown?shown.vy+point.offset.vy:0)*0.045;
     mesh.rotation.y+=(shown?shown.vx+point.offset.vx:0)*0.045;
     const trail=shown?.trail||[];
@@ -1142,12 +1154,13 @@ function makeComparisonSession(index,slot){
   addComparisonLights(THREE,scene);
   const boardGroup=cloneThreeBoardForSolution(solution);
   scene.add(boardGroup);
-  const ballMeshes={}, trailMeshes={};
+  const ballMeshes={}, trailMeshes={}, shadowMeshes={};
   COLORS.forEach(color=>{
     ballMeshes[color.id]=boardGroup.getObjectByName(`ball-${color.id}`);
+    shadowMeshes[color.id]=boardGroup.getObjectByName(`contact-shadow-${color.id}`);
     trailMeshes[color.id]=Array.from({length:12},(_,trailIndex)=>boardGroup.getObjectByName(`trail-${color.id}-${trailIndex}`));
   });
-  const session={index,solution,sim:simulateForSolution(solution),renderer,scene,camera,boardGroup,ballMeshes,trailMeshes,host,width:0,height:0,ptr:0,disp:{},dropSeq:[],theta:0,thetaTarget:0,physics:makeRotationalPhysics()};
+  const session={index,solution,sim:simulateForSolution(solution),renderer,scene,camera,boardGroup,ballMeshes,trailMeshes,shadowMeshes,host,width:0,height:0,ptr:0,disp:{},dropSeq:[],theta:0,thetaTarget:0,physics:makeRotationalPhysics()};
   resetComparisonSession(session);
   resizeComparisonSession(session);
   return session;
@@ -1183,9 +1196,13 @@ function updateComparisonBoard(session,dtMs=16.667){
     const ball=balls.find(item=>item.id===point.id);
     const shown=point.shown;
     const mesh=session.ballMeshes[ball.id];
+    const contactShadow=session.shadowMeshes[ball.id];
     if(!mesh) continue;
     mesh.visible=!shown||shown.alpha>0;
-    mesh.position.set(point.x,point.y,shown&&shown.exiting?0.75+(1-shown.alpha)*0.45:0.75);
+    mesh.position.set(point.x,point.y,shown&&shown.exiting?0.75+(1-shown.alpha)*0.45:threeBallContactSpec().centerZ);
+    contactShadow.visible=mesh.visible;
+    contactShadow.position.set(point.x,point.y,threeBallContactSpec().shadowZ);
+    contactShadow.scale.set(1+Math.min(0.2,Math.abs(point.offset.vx)+Math.abs(point.offset.vy)*0.08),1,1);
     mesh.rotation.x+=((shown?.vy||0)+point.offset.vy)*0.045;
     mesh.rotation.y+=((shown?.vx||0)+point.offset.vx)*0.045;
     (session.trailMeshes[ball.id]||[]).forEach((ghost,trailIndex)=>{

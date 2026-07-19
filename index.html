@@ -798,6 +798,11 @@ function threeWallSpec(fixed){
     ? {color:'#382011', roughness:0.7, metalness:0.02}
     : {color:'#e4c28f', roughness:0.58, metalness:0.03};
 }
+function threeWallGeometrySpec(){
+  const floorTop=threeBallContactSpec().floorTop;
+  const height=0.30;
+  return {floorTop,height,centerZ:floorTop+height/2,topZ:floorTop+height};
+}
 function threeWoodMaterial(THREE,color,roughness,metalness=0.02){
   return new THREE.MeshStandardMaterial({color,roughness,metalness});
 }
@@ -820,13 +825,14 @@ function addThreeWall(state,t,r,c,fixed){
   const color=new THREE.Color(spec.color);
   color.offsetHSL(0,0,((r*7+c*11)%5-2)*0.025);
   const material=threeWoodMaterial(THREE,color,spec.roughness,spec.metalness);
+  const wallGeometry=threeWallGeometrySpec();
   const horizontal=t==='h';
   const geometry=horizontal
-    ? new THREE.BoxGeometry(1.04,0.15,0.66)
-    : new THREE.BoxGeometry(0.15,1.04,0.66);
+    ? new THREE.BoxGeometry(1.04,0.15,wallGeometry.height)
+    : new THREE.BoxGeometry(0.15,1.04,wallGeometry.height);
   const mesh=new THREE.Mesh(geometry,material);
-  if(horizontal){ mesh.position.set(c+0.5-N/2,N/2-r,0.69); }
-  else { mesh.position.set(c-N/2,N/2-r-0.5,0.69); }
+  if(horizontal){ mesh.position.set(c+0.5-N/2,N/2-r,wallGeometry.centerZ); }
+  else { mesh.position.set(c-N/2,N/2-r-0.5,wallGeometry.centerZ); }
   mesh.castShadow=true; mesh.receiveShadow=true;
   wallGroup.add(mesh);
 }

@@ -78,6 +78,8 @@
   .principle-flow b{color:#e8bd74;font-size:12px;}
   #verifyBar{display:none;background:#12251a;border-color:#2a5c3d;}
   #stepInfo{font-size:14px;font-weight:600;}
+  body.player-mode .setter-only{display:none!important;}
+  body.player-mode #solutionsPanel,body.player-mode #compareStage{display:none!important;}
   @media (max-width:720px){
     body{padding:12px;}
     .game-intro{min-height:0;margin-bottom:12px;padding:10px 0 13px;background-size:430px auto;background-position:120px center;}
@@ -100,9 +102,9 @@
 </head>
 <body>
   <header class="game-intro">
-    <div class="game-kicker">20 步重力机关挑战</div>
-    <h1>五珠机关盘</h1>
-    <p>倾转盘面，布置路径，让五颗钢珠按指定顺序出盘。</p>
+    <div class="game-kicker" id="gameKicker">20 步重力机关挑战</div>
+    <h1 id="gameTitle">五珠机关盘</h1>
+    <p id="gameSummary">倾转盘面，布置路径，让五颗钢珠按指定顺序出盘。</p>
     <div class="player-rules" id="playerRules" aria-label="选手规则">
       <div class="player-rule"><b>题面</b><span>固定，不可改</span></div>
       <div class="player-rule"><b>操作</b><span>只摆盘内浅色墙</span></div>
@@ -129,12 +131,13 @@
         <div class="compare-grid" id="compareGrid"></div>
       </section>
       <div class="row" style="margin-top:10px;justify-content:center;">
-        <button class="primary" id="solveBtn">🤖 生成 3 解</button>
+        <button class="primary setter-only" id="solveBtn">🤖 生成 3 解</button>
+        <button class="setter-only" id="publishBtn">↗ 同步到答题网页</button>
         <button id="verifyBtn">⏭ 逐步验证</button>
-        <button id="playBtn">▶ 自动演示</button>
-        <button id="quickBtn" class="small">⚡ 快速结果</button>
-        <button id="sealBtn" class="small">🧱 封闭路径</button>
-        <button id="editBtn" class="small">✎ 继续摆墙</button>
+        <button class="setter-only" id="playBtn">▶ 自动演示</button>
+        <button class="setter-only small" id="quickBtn">⚡ 快速结果</button>
+        <button class="setter-only small" id="sealBtn">🧱 封闭路径</button>
+        <button class="setter-only small" id="editBtn">✎ 继续摆墙</button>
         <button id="clearBtn" class="small">清空内墙</button>
         <button id="resetBtn" class="small">重置内墙</button>
       </div>
@@ -209,6 +212,8 @@ const DIRS = [[-1,0],[0,1],[1,0],[0,-1]];
 const S_DIR = 2;
 
 let N, hwall, vwall, exitCol, balls, instr, target;
+let fixedInitialWalls = null;
+let questionSeed = null;
 let mode = 'design';           // 'design' | 'anim'
 let theta = 0, thetaTarget = 0;
 let disp = {};                 // 播放时的显示态 id -> {x,y,vy,alpha,exiting,r,c}
@@ -223,16 +228,64 @@ let threeState = null;
 let attemptStartedAt = null, attemptFinishedAt = null;
 let comparisonState = null;
 
+function queryParam(name){
+  if(typeof window==='undefined'||!window.location||typeof URLSearchParams==='undefined') return null;
+  return new URLSearchParams(window.location.search).get(name);
+}
+const playerMode=queryParam('mode')==='play';
+
 /* ---------- 初始化 ---------- */
 function initState(){
-  N = FIXED_QUESTION.size;
-  exitCol = FIXED_QUESTION.exitCol;
-  balls = FIXED_QUESTION.balls.map(ball=>({...ball}));
-  instr = FIXED_QUESTION.instr.slice();
-  target = FIXED_QUESTION.target.slice();
-  const w = emptyWalls();
-  hwall = w.hw; vwall = w.vw;
+  applyQuestionData(FIXED_QUESTION);
+}
+function validWallGrid(grid,rows,cols){
+  return Array.isArray(grid) && grid.length===rows && grid.every(row=>Array.isArray(row)&&row.length===cols);
+}
+function cloneQuestionData(question){
+  return {
+    version:1,
+    size:question.size,
+    exitCol:question.exitCol,
+    balls:question.balls.map(ball=>({id:ball.id,ir:ball.ir,ic:ball.ic})),
+    instr:question.instr.slice(),
+    target:question.target.slice(),
+    initialWalls:cloneWalls(question.initialWalls.hw,question.initialWalls.vw),
+  };
+}
+function applyQuestionData(question){
+  if(!question || question.size!==10 || !Number.isInteger(question.exitCol)
+    || !Array.isArray(question.balls) || question.balls.length!==5
+    || !Array.isArray(question.instr) || question.instr.length!==20
+    || !Array.isArray(question.target) || question.target.length!==5) return false;
+  N=question.size;
+  exitCol=Math.max(0,Math.min(N-1,question.exitCol));
+  balls=question.balls.map(ball=>({id:ball.id,ir:ball.ir,ic:ball.ic}));
+  instr=question.instr.slice();
+  target=question.target.slice();
+  const defaults=emptyWalls();
+  const supplied=question.initialWalls;
+  hwall=validWallGrid(supplied?.hw,N+1,N)
+    ? supplied.hw.map(row=>row.map(Boolean))
+    : defaults.hw;
+  vwall=validWallGrid(supplied?.vw,N,N+1)
+    ? supplied.vw.map(row=>row.map(Boolean))
+    : defaults.vw;
+  for(let c=0;c<N;c++){ hwall[0][c]=true; hwall[N][c]=true; }
+  for(let r=0;r<N;r++){ vwall[r][0]=true; vwall[r][N]=true; }
+  hwall[N][exitCol]=false;
+  addFixedSupports(hwall);
+  fixedInitialWalls=cloneWalls(hwall,vwall);
+  questionSeed=cloneQuestionData({size:N,exitCol,balls,instr,target,initialWalls:fixedInitialWalls});
   attemptStartedAt=null; attemptFinishedAt=null;
+  return true;
+}
+function exportQuestionData(){
+  const initial=fixedInitialWalls || emptyWalls();
+  return cloneQuestionData({size:N,exitCol,balls,instr,target,initialWalls:initial});
+}
+function restoreQuestionState(){
+  if(questionSeed) applyQuestionData(questionSeed);
+  else initState();
 }
 function fixedSupportEdges(){
   return balls.map(b=>({r:b.ir+1, c:b.ic}));
@@ -241,7 +294,11 @@ function addFixedSupports(hw){
   for(const edge of fixedSupportEdges()) hw[edge.r][edge.c]=true;
 }
 function isFixedWall(t,r,c){
-  return t==='h' && fixedSupportEdges().some(edge=>edge.r===r && edge.c===c);
+  const support=t==='h' && fixedSupportEdges().some(edge=>edge.r===r && edge.c===c);
+  const initial=t==='h'
+    ? Boolean(fixedInitialWalls?.hw?.[r]?.[c])
+    : Boolean(fixedInitialWalls?.vw?.[r]?.[c]);
+  return support||initial;
 }
 function toggleInternalWall(t,r,c){
   if(isFixedWall(t,r,c)) return false;
@@ -1322,7 +1379,7 @@ function initDisp(){
   disp={};
   for(const b of balls){
     const [x,y]=cellCenter(b.ir,b.ic);
-    disp[b.id]={x,y,vx:0,vy:0,alpha:1,exiting:false,r:b.ir,c:b.ic,trail:[],motion:null,exitMotion:null};
+    disp[b.id]={x,y,vx:0,vy:0,alpha:1,exiting:false,r:b.ir,c:b.ic,trail:[],path:[],segment:null};
   }
 }
 function addDisplayTrail(d,frame){
@@ -1335,30 +1392,33 @@ function advanceDisplay(ms){
   for(const id in disp){
     const d=disp[id];
     if(d.alpha<=0) continue;
-    if(d.exiting){
-      const motion=d.exitMotion || (d.exitMotion={fromY:d.y,toY:d.y+BOARD/N*1.45,elapsed:0,duration:240});
-      const previousY=d.y;
-      motion.elapsed=Math.min(motion.duration,motion.elapsed+ms);
-      const progress=motion.elapsed/motion.duration;
-      const eased=1-Math.pow(1-progress,3);
-      d.y=motion.fromY+(motion.toY-motion.fromY)*eased;
-      d.vy=(d.y-previousY)/Math.max(1,ms/16.667);
-      d.alpha=1-progress;
-      addDisplayTrail(d,Math.max(0.1,ms/16.667));
-      continue;
+    let remaining=ms;
+    while(remaining>0){
+      if(!d.segment){
+        const next=d.path.shift();
+        if(!next) break;
+        d.segment=next.type==='exit'
+          ? {type:'exit',fromX:d.x,fromY:d.y,toX:d.x,toY:d.y+BOARD/N*1.45,elapsed:0,duration:220}
+          : {type:'move',fromX:d.x,fromY:d.y,toX:next.x,toY:next.y,elapsed:0,duration:100};
+      }
+      const segment=d.segment;
+      const used=Math.min(remaining,segment.duration-segment.elapsed);
+      const previousX=d.x, previousY=d.y;
+      segment.elapsed+=used;
+      const progress=segment.elapsed/segment.duration;
+      d.x=segment.fromX+(segment.toX-segment.fromX)*progress;
+      d.y=segment.fromY+(segment.toY-segment.fromY)*progress;
+      d.vx=(d.x-previousX)/Math.max(1,used/16.667);
+      d.vy=(d.y-previousY)/Math.max(1,used/16.667);
+      if(segment.type==='exit') d.alpha=1-progress;
+      addDisplayTrail(d,Math.max(0.1,used/16.667));
+      remaining-=used;
+      if(progress>=1){
+        if(segment.type==='exit') d.exiting=true;
+        d.segment=null;
+        d.vx=0; d.vy=0;
+      }
     }
-    const motion=d.motion;
-    if(!motion) continue;
-    const previousX=d.x, previousY=d.y;
-    motion.elapsed=Math.min(motion.duration,motion.elapsed+ms);
-    const progress=motion.elapsed/motion.duration;
-    const eased=1-Math.pow(1-progress,3);
-    d.x=motion.fromX+(motion.toX-motion.fromX)*eased;
-    d.y=motion.fromY+(motion.toY-motion.fromY)*eased;
-    d.vx=(d.x-previousX)/Math.max(1,ms/16.667);
-    d.vy=(d.y-previousY)/Math.max(1,ms/16.667);
-    if(progress>=1){ d.motion=null; d.vx=0; d.vy=0; }
-    else addDisplayTrail(d,Math.max(0.1,ms/16.667));
   }
 }
 function applyFrame(ev){
@@ -1367,14 +1427,22 @@ function applyFrame(ev){
     if(!d||!p) continue;
     const [toX,toY]=cellCenter(p[0],p[1]);
     if(d.r!==p[0]||d.c!==p[1]){
-      d.motion={fromX:d.x,fromY:d.y,toX,toY,elapsed:0,duration:170};
+      d.path.push({type:'move',x:toX,y:toY});
       d.r=p[0]; d.c=p[1];
     }
   }
   for(const id of ev.exits){
-    if(disp[id]){ disp[id].exiting=true; disp[id].motion=null; disp[id].exitMotion=null; disp[id].vx=0; disp[id].vy=0; }
+    const d=disp[id];
+    if(d) d.path.push({type:'exit'});
     dropSeq.push(id);
   }
+}
+function isDisplayIdle(display=disp){
+  return Object.values(display).every(ball=>!ball.segment && ball.path.length===0);
+}
+async function waitForDisplayIdle(display=disp,timeout=5000){
+  const until=performance.now()+timeout;
+  while(!isDisplayIdle(display) && performance.now()<until) await sleep(16);
 }
 
 /* ---------- 自动演示 ---------- */
@@ -1388,10 +1456,19 @@ async function play(){
   setResult('自动演示中…');
   document.getElementById('seq').innerHTML='';
   await sleep(400);
-  for(const ev of events){
+  for(let index=0;index<events.length;){
+    const ev=events[index];
     if(token!==playToken) return;
-    if(ev.t==='rot'){ thetaTarget=ev.theta; await sleep(420); }
-    else { applyFrame(ev); await sleep(190); }
+    if(ev.t==='rot'){
+      thetaTarget=ev.theta;
+      index++;
+      await sleep(420);
+      continue;
+    }
+    while(index<events.length && events[index].t==='set'){
+      applyFrame(events[index++]);
+    }
+    await waitForDisplayIdle();
   }
   if(token!==playToken) return;
   showResult(record,sim.score);
@@ -1423,13 +1500,15 @@ async function verifyStart(){
   highlightChip(0);
 }
 async function consumeSettles(){
+  let queued=false;
   while(vPtr<vEvents.length && vEvents[vPtr].t==='set'){
     const ev=vEvents[vPtr++];
     applyFrame(ev);
+    queued=true;
     for(const id of ev.exits){ vRecord.push(id); }
     renderSeq(vRecord);
-    await sleep(200);
   }
+  if(queued) await waitForDisplayIdle();
 }
 function comparisonBestSession(){
   if(!comparisonState) return null;
@@ -1450,6 +1529,7 @@ function nextComparisonSettleFrame(sessions){
 }
 async function consumeComparisonSettles(){
   if(!comparisonState) return;
+  let queued=false;
   while(comparisonState){
     const frames=nextComparisonSettleFrame(comparisonState.sessions);
     if(!frames) break;
@@ -1458,10 +1538,11 @@ async function consumeComparisonSettles(){
       const session=comparisonState.sessions[index];
       applyComparisonFrame(session,event);
       session.ptr++;
+      queued=true;
     });
     syncComparisonRecord();
-    await sleep(190);
   }
+  if(queued) await Promise.all(comparisonState.sessions.map(session=>waitForDisplayIdle(session.disp)));
 }
 function updateComparisonStepInfo(){
   if(!comparisonState) return;
@@ -1578,7 +1659,7 @@ function enterDesign(){
   exitComparison();
   playToken++; exitVerify(true);
   mode='design'; thetaTarget=0; theta=0; dropSeq=[];
-  setResult('摆墙模式：点格子边线增减普通内墙');
+  setResult(playerMode?'答题模式：点格子边线插入或移除浅色木板':'摆墙模式：点格子边线增减普通内墙');
   document.getElementById('seq').innerHTML='';
 }
 
@@ -1660,6 +1741,37 @@ function buildTarget(){
   const note=document.createElement('div'); note.className='hint'; note.style.width='100%'; note.textContent='题面固定，不可修改。';
   box.appendChild(note);
 }
+function loadQuestionFromLocation(){
+  const encoded=queryParam('q');
+  if(!encoded){ initState(); return; }
+  try{
+    if(!applyQuestionData(JSON.parse(encoded))) initState();
+  }catch(error){
+    initState();
+  }
+}
+function playerPageUrl(){
+  const url=new URL('play.html',window.location.href);
+  url.searchParams.set('q',JSON.stringify(exportQuestionData()));
+  return url.toString();
+}
+async function publishQuestion(){
+  const url=playerPageUrl();
+  try{
+    if(navigator.clipboard?.writeText) await navigator.clipboard.writeText(url);
+  }catch(error){
+    // 本地 file:// 打开时浏览器可能拒绝剪贴板权限，链接仍可直接打开。
+  }
+  setResult(`题面已同步。<a href="${url}" target="_blank" rel="noopener" style="color:#7dc3ff">打开答题网页</a>`);
+}
+function configurePlayerMode(){
+  if(!playerMode) return;
+  document.body.classList.add('player-mode');
+  document.getElementById('gameKicker').textContent='选手答题网页';
+  document.getElementById('gameTitle').textContent='五珠机关盘 · 答题';
+  document.getElementById('gameSummary').textContent='只可插入或移除浅色木板，验证你的机关设计。';
+  document.getElementById('verifyBtn').textContent='⏭ 验证答案';
+}
 function validateTarget(){
   const note=document.getElementById('tgtNote'); if(!note) return;
   const uniq=new Set(target);
@@ -1668,6 +1780,7 @@ function validateTarget(){
 
 /* ---------- 按钮 ---------- */
 document.getElementById('solveBtn').onclick=solve;
+document.getElementById('publishBtn').onclick=publishQuestion;
 document.getElementById('verifyBtn').onclick=verifyStart;
 document.getElementById('nextBtn').onclick=verifyNext;
 document.getElementById('exitVerifyBtn').onclick=()=>exitVerify(false);
@@ -1685,13 +1798,14 @@ document.getElementById('clearBtn').onclick=()=>{
   if(mode!=='design') return;
   clearInternalWalls();
 };
-document.getElementById('resetBtn').onclick=()=>{ initState();
+document.getElementById('resetBtn').onclick=()=>{ restoreQuestionState();
   document.getElementById('exitInfo').textContent=(exitCol+1); buildInstr(); buildTarget(); enterDesign(); };
 
 /* ---------- 启动 ---------- */
-initState(10);
+loadQuestionFromLocation();
 document.getElementById('exitInfo').textContent=(exitCol+1);
 buildInstr(); buildTarget(); enterDesign();
+configurePlayerMode();
 if(window.THREE) initThreeBoard();
 else window.addEventListener('load',initThreeBoard,{once:true});
 loop();

@@ -59,6 +59,7 @@
   button.go{background:var(--ok);border-color:var(--ok);color:#06101f;font-weight:700;font-size:15px;padding:10px 22px;}
   button.small{padding:5px 9px;font-size:12px;}
   button.sizeBtn.active{background:var(--accent);border-color:var(--accent);color:#06101f;font-weight:700;}
+  button.question-active{background:#e7bd72;border-color:#e7bd72;color:#211306;font-weight:700;}
   select{background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:7px;padding:6px 8px;font-size:13px;}
   label{font-size:13px;color:var(--muted);}
   .chips{display:grid;grid-template-columns:repeat(10,1fr);gap:5px;}
@@ -66,6 +67,8 @@
     padding:5px 0;font-size:13px;cursor:pointer;user-select:none;line-height:1.2;}
   .chip .n{display:block;font-size:9px;color:var(--muted);}
   .chip.cw{color:#ffcf4d;} .chip.ccw{color:#4fd0ff;}
+  .chip.editable{cursor:pointer;border-color:#4d6288;box-shadow:inset 0 0 0 1px #e7bd7233;}
+  .chip.editable:hover{border-color:#e7bd72;background:#243450;}
   .chip.done{opacity:.35;}
   .chip.cur{border-color:#ffd94d;box-shadow:0 0 6px #ffd94d66;}
   .tgt{display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
@@ -78,6 +81,7 @@
   .principle-flow b{color:#e8bd74;font-size:12px;}
   #verifyBar{display:none;background:#12251a;border-color:#2a5c3d;}
   #stepInfo{font-size:14px;font-weight:600;}
+  .question-editor.is-editing{border-color:#a87936;background:rgba(40,31,20,.94);}
   body.player-mode .setter-only{display:none!important;}
   body.player-mode #solutionsPanel,body.player-mode #compareStage{display:none!important;}
   @media (max-width:720px){
@@ -115,10 +119,20 @@
 
   <div class="wrap">
     <div class="left">
-      <div class="panel" style="max-width:560px;">
-        <h2>旋转指令 · 20 次（题目给定）</h2>
+      <section class="panel setter-only question-editor" id="questionEditor">
+        <h2>题面编辑</h2>
         <div class="row">
-          <span class="hint">题面固定，不可修改</span>
+          <button class="primary" id="randomQuestionBtn">🎲 随机题面</button>
+          <button id="manualQuestionBtn">✥ 手动出题</button>
+          <button id="finishQuestionBtn" class="question-active" style="display:none;">✓ 确认题面</button>
+          <button id="restoreFixedQuestionBtn" class="small">还原示例题</button>
+        </div>
+        <div class="hint" id="questionEditHint">随机题面会重置五球位置与 20 条旋转指令。</div>
+      </section>
+      <div class="panel" style="max-width:560px;">
+        <h2 id="instrTitle">旋转指令 · 20 次（题目给定）</h2>
+        <div class="row">
+          <span class="hint" id="instrHint">题面固定，不可修改</span>
         </div>
         <div class="chips" id="instrChips"></div>
       </div>
@@ -206,6 +220,8 @@ const FIXED_QUESTION = Object.freeze({
   instr: Object.freeze([1,-1,1,1,-1,-1,1,-1,-1,1,1,-1,1,1,-1,-1,1,-1,-1,1]),
   target: Object.freeze(['R','Y','B','G','P']),
 });
+const FIXED_EXIT_COL=FIXED_QUESTION.exitCol;
+const FIXED_TARGET=FIXED_QUESTION.target.slice();
 
 // 方向 N,E,S,W = 0,1,2,3
 const DIRS = [[-1,0],[0,1],[1,0],[0,-1]];
@@ -227,6 +243,8 @@ let lastFrameAt = performance.now();
 let threeState = null;
 let attemptStartedAt = null, attemptFinishedAt = null;
 let comparisonState = null;
+let questionEditing = false;
+let questionDragMoved = false;
 
 function queryParam(name){
   if(typeof window==='undefined'||!window.location||typeof URLSearchParams==='undefined') return null;
@@ -241,6 +259,21 @@ function initState(){
 function validWallGrid(grid,rows,cols){
   return Array.isArray(grid) && grid.length===rows && grid.every(row=>Array.isArray(row)&&row.length===cols);
 }
+function validQuestionBalls(candidate){
+  if(!Array.isArray(candidate)||candidate.length!==FIXED_TARGET.length) return false;
+  const ids=new Set(); const cells=new Set();
+  for(const ball of candidate){
+    if(!ball||!FIXED_TARGET.includes(ball.id)||ids.has(ball.id)
+      || !Number.isInteger(ball.ir)||!Number.isInteger(ball.ic)
+      || ball.ir<0||ball.ir>=FIXED_QUESTION.size||ball.ic<0||ball.ic>=FIXED_QUESTION.size
+      || (ball.ir===FIXED_QUESTION.size-1&&ball.ic===FIXED_EXIT_COL)) return false;
+    ids.add(ball.id);
+    const cell=`${ball.ir},${ball.ic}`;
+    if(cells.has(cell)) return false;
+    cells.add(cell);
+  }
+  return ids.size===FIXED_TARGET.length;
+}
 function cloneQuestionData(question){
   return {
     version:1,
@@ -254,14 +287,13 @@ function cloneQuestionData(question){
 }
 function applyQuestionData(question){
   if(!question || question.size!==10 || !Number.isInteger(question.exitCol)
-    || !Array.isArray(question.balls) || question.balls.length!==5
-    || !Array.isArray(question.instr) || question.instr.length!==20
-    || !Array.isArray(question.target) || question.target.length!==5) return false;
+    || !validQuestionBalls(question.balls)
+    || !Array.isArray(question.instr) || question.instr.length!==20) return false;
   N=question.size;
-  exitCol=Math.max(0,Math.min(N-1,question.exitCol));
+  exitCol=FIXED_EXIT_COL;
   balls=question.balls.map(ball=>({id:ball.id,ir:ball.ir,ic:ball.ic}));
-  instr=question.instr.slice();
-  target=question.target.slice();
+  instr=question.instr.map(direction=>direction===-1?-1:1);
+  target=FIXED_TARGET.slice();
   const defaults=emptyWalls();
   const supplied=question.initialWalls;
   hwall=validWallGrid(supplied?.hw,N+1,N)
@@ -277,6 +309,55 @@ function applyQuestionData(question){
   fixedInitialWalls=cloneWalls(hwall,vwall);
   questionSeed=cloneQuestionData({size:N,exitCol,balls,instr,target,initialWalls:fixedInitialWalls});
   attemptStartedAt=null; attemptFinishedAt=null;
+  return true;
+}
+function syncQuestionSeed(){
+  questionSeed=cloneQuestionData({size:N,exitCol,balls,instr,target,initialWalls:fixedInitialWalls});
+}
+function clearQuestionSolutions(){
+  solutionHistory=[];
+  solutionFingerprints=new Set();
+  activeSolutionIndex=-1;
+  if(comparisonState) exitComparison();
+}
+function rebuildQuestionBaseWalls(){
+  const base=emptyWalls();
+  hwall=base.hw; vwall=base.vw;
+  fixedInitialWalls=cloneWalls(hwall,vwall);
+  attemptStartedAt=null; attemptFinishedAt=null;
+  clearQuestionSolutions();
+  syncQuestionSeed();
+}
+function moveQuestionBall(id,r,c){
+  if(!Number.isInteger(r)||!Number.isInteger(c)||r<0||r>=N||c<0||c>=N
+    || (r===N-1&&c===exitCol)) return false;
+  const ball=balls.find(item=>item.id===id);
+  if(!ball||balls.some(item=>item.id!==id&&item.ir===r&&item.ic===c)) return false;
+  ball.ir=r; ball.ic=c;
+  rebuildQuestionBaseWalls();
+  return true;
+}
+function randomizeQuestion(rng=Math.random){
+  const cells=[];
+  for(let r=0;r<N;r++) for(let c=0;c<N;c++) if(!(r===N-1&&c===exitCol)) cells.push({r,c});
+  for(let i=cells.length-1;i>0;i--){
+    const swap=Math.floor(Math.max(0,Math.min(0.999999,rng()))*(i+1));
+    [cells[i],cells[swap]]=[cells[swap],cells[i]];
+  }
+  balls=FIXED_TARGET.map((id,index)=>({id,ir:cells[index].r,ic:cells[index].c}));
+  instr=Array.from({length:20},()=>rng()<0.5?-1:1);
+  target=FIXED_TARGET.slice();
+  exitCol=FIXED_EXIT_COL;
+  rebuildQuestionBaseWalls();
+  return true;
+}
+function toggleQuestionInstruction(index){
+  if(!Number.isInteger(index)||index<0||index>=instr.length) return false;
+  instr[index]=instr[index]===1?-1:1;
+  hwall=fixedInitialWalls.hw.map(row=>row.slice());
+  vwall=fixedInitialWalls.vw.map(row=>row.slice());
+  clearQuestionSolutions();
+  syncQuestionSeed();
   return true;
 }
 function exportQuestionData(){
@@ -761,6 +842,7 @@ function phaseBStep(sess, deadline, es, best){
   return sess.cur.prefix===5;
 }
 async function solve(){
+  if(questionEditing) finishQuestionEditing();
   if(solving) { solving=false; return; }   // 再点一次 = 取消
   enterDesign();
   attemptStartedAt=null; attemptFinishedAt=null;
@@ -1055,7 +1137,10 @@ function updateThreeBoard(){
     const shown=mode==='anim'?disp[ball.id]:null;
     const mesh=ballMeshes[ball.id];
     const contactShadow=shadowMeshes[ball.id];
-    const point=shown?{x:shown.x/unit,y:-shown.y/unit}:cellToThree(ball.ir,ball.ic);
+    const questionDrag=questionEditing&&dragId===ball.id&&dragXY;
+    const point=questionDrag
+      ? {x:dragXY[0]/unit,y:-dragXY[1]/unit}
+      : shown?{x:shown.x/unit,y:-shown.y/unit}:cellToThree(ball.ir,ball.ic);
     mesh.visible=!shown||shown.alpha>0;
     mesh.position.set(point.x,point.y,shown&&shown.exiting?0.75+(1-shown.alpha)*0.45:threeBallContactSpec().centerZ);
     contactShadow.visible=mesh.visible;
@@ -1343,7 +1428,7 @@ function draw(){
     ctx.strokeStyle='#00000055'; ctx.lineWidth=1.5; ctx.stroke();
     ctx.globalAlpha=1;
   };
-  if(mode==='design'){
+  if(mode==='design'||mode==='question'){
     for(const b of balls){
       if(dragId===b.id && dragXY){ drawBall(dragXY[0],dragXY[1],b.id,1); continue; }
       const [x,y]=cellCenter(b.ir,b.ic); drawBall(x,y,b.id,1);
@@ -1693,16 +1778,46 @@ function quick(){
   showResult(sim.record,sim.score);
 }
 function enterDesign(){
+  questionEditing=false; questionDragMoved=false;
   exitComparison();
   playToken++; exitVerify(true);
   mode='design'; thetaTarget=0; theta=0; dropSeq=[];
+  updateQuestionEditorUI();
   setResult(playerMode?'答题模式：点格子边线插入或移除浅色木板':'摆墙模式：点格子边线增减普通内墙');
   document.getElementById('seq').innerHTML='';
+}
+function enterQuestionEditing(message){
+  if(playerMode) return;
+  exitComparison();
+  playToken++; exitVerify(true);
+  hwall=fixedInitialWalls.hw.map(row=>row.slice());
+  vwall=fixedInitialWalls.vw.map(row=>row.slice());
+  mode='question'; thetaTarget=0; theta=0; dropSeq=[];
+  questionEditing=true; dragId=null; dragXY=null; questionDragMoved=false;
+  buildInstr(); buildTarget(); updateQuestionEditorUI();
+  setResult(message||'手动出题：拖动五颗球到起始格，点击旋转指令切换方向。');
+  document.getElementById('seq').innerHTML='';
+}
+function finishQuestionEditing(){
+  if(!questionEditing) return;
+  syncQuestionSeed();
+  enterDesign();
+  buildInstr(); buildTarget();
+  setResult('题面已确认。现在可生成不同解法，或同步到答题网页。');
+}
+function startRandomQuestion(){
+  randomizeQuestion();
+  enterQuestionEditing('已随机生成题面：拖动五颗球或点击旋转指令继续微调。');
+}
+function restoreExampleQuestion(){
+  initState();
+  clearQuestionSolutions();
+  enterQuestionEditing('已还原示例题面，可继续手动修改。');
 }
 
 /* ---------- 交互：画墙 / 拖珠 / 移出口 ---------- */
 function toMaze(evt){
-  if(threeState&&mode==='design'){
+  if(threeState&&(mode==='design'||mode==='question')){
     const rect=threeState.renderer.domElement.getBoundingClientRect();
     const camera=threeState.camera;
     const worldX=camera.left+(evt.clientX-rect.left)/rect.width*(camera.right-camera.left)-threeState.boardGroup.position.x;
@@ -1737,20 +1852,46 @@ function ballAt(x,y){
     if((x+OX-cx)**2+(y+OY-cy)**2 < (s*0.36)**2) return b; }
   return null;
 }
-cv.addEventListener('mousedown',e=>{
-  if(mode!=='design') return;
+function pointToCell(x,y){
+  const s=BOARD/N;
+  const r=Math.floor(y/s), c=Math.floor(x/s);
+  return r>=0&&r<N&&c>=0&&c<N ? {r,c} : null;
+}
+cv.addEventListener('pointerdown',e=>{
+  if(questionEditing){
+    const [x,y]=toMaze(e); const ball=ballAt(x,y);
+    if(!ball) return;
+    dragId=ball.id; dragXY=[x+OX,y+OY]; questionDragMoved=false;
+    if(cv.setPointerCapture) cv.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  }
 });
-cv.addEventListener('mousemove',e=>{
+cv.addEventListener('pointermove',e=>{
+  if(questionEditing){
+    if(!dragId) return;
+    const [x,y]=toMaze(e); dragXY=[x+OX,y+OY]; questionDragMoved=true;
+    return;
+  }
   if(mode!=='design') return;
   const [x,y]=toMaze(e); const mx=x+OX,my=y+OY;
   if(dragId){ dragXY=[mx,my]; hoverEdge=null; return; }
   const eg=pickEdge(x,y);
   hoverEdge = (eg && eg.type!=='exit')? {type:eg.type, r:eg.r, c:eg.c} : null;
 });
-window.addEventListener('mouseup',e=>{
+window.addEventListener('pointerup',e=>{
+  if(questionEditing&&dragId){
+    const id=dragId;
+    const [x,y]=toMaze(e); const cell=pointToCell(x,y);
+    const moved=Boolean(cell)&&moveQuestionBall(id,cell.r,cell.c);
+    dragId=null; dragXY=null; questionDragMoved=false;
+    if(moved) setResult(`已放置${colOf(id).name}球起始位置；下方承托墙已自动更新。`);
+    else setResult('该格不可作为起始位置：不能与其他球重叠，也不能放在出口格。');
+    return;
+  }
   dragId=null; dragXY=null;
 });
 cv.addEventListener('click',e=>{
+  if(questionEditing) return;
   if(mode!=='design'||dragId) return;
   const [x,y]=toMaze(e);
   if(ballAt(x,y)) return;
@@ -1765,10 +1906,18 @@ cv.addEventListener('mouseleave',()=>{hoverEdge=null;});
 /* ---------- 右侧面板 ---------- */
 function buildInstr(){
   const box=document.getElementById('instrChips'); box.innerHTML='';
+  const editable=questionEditing&&!playerMode;
+  document.getElementById('instrTitle').textContent=editable?'旋转指令 · 点击切换方向':'旋转指令 · 20 次（题目给定）';
+  document.getElementById('instrHint').textContent=editable?'编辑中：点击任一编号切换顺时针 / 逆时针':'题面固定，不可修改';
   instr.forEach((v,i)=>{
     const d=document.createElement('div');
-    d.className='chip '+(v===1?'cw':'ccw');
+    d.className='chip '+(v===1?'cw':'ccw')+(editable?' editable':'');
     d.innerHTML=`<span class="n">${i+1}</span>${v===1?'↻':'↺'}`;
+    if(editable) d.onclick=()=>{
+      toggleQuestionInstruction(i);
+      buildInstr(); updateQuestionEditorUI();
+      setResult(`第 ${i+1} 次旋转已切换为 ${instr[i]===1?'顺时针':'逆时针'}。`);
+    };
     box.appendChild(d);
   });
 }
@@ -1782,8 +1931,20 @@ function buildTarget(){
     item.appendChild(swatch); item.appendChild(label); box.appendChild(item);
     if(i<target.length-1){ const a=document.createElement('span'); a.textContent='→'; a.style.color='#8ea2c4'; box.appendChild(a); }
   });
-  const note=document.createElement('div'); note.className='hint'; note.style.width='100%'; note.textContent='题面固定，不可修改。';
+  const note=document.createElement('div'); note.className='hint'; note.style.width='100%'; note.textContent=questionEditing?'目标顺序与出口位置固定。':'题面固定，不可修改。';
   box.appendChild(note);
+}
+function updateQuestionEditorUI(){
+  const panel=document.getElementById('questionEditor');
+  const manual=document.getElementById('manualQuestionBtn');
+  const finish=document.getElementById('finishQuestionBtn');
+  const hint=document.getElementById('questionEditHint');
+  panel.classList.toggle('is-editing',questionEditing);
+  manual.disabled=questionEditing;
+  finish.style.display=questionEditing?'inline-block':'none';
+  hint.textContent=questionEditing
+    ? '拖动五颗球设定起始位置；点击 1 至 20 号指令切换方向。出口与目标顺序固定。'
+    : '随机题面会重置五球位置与 20 条旋转指令。';
 }
 function loadQuestionFromLocation(){
   const encoded=queryParam('q');
@@ -1824,6 +1985,10 @@ function validateTarget(){
 
 /* ---------- 按钮 ---------- */
 document.getElementById('solveBtn').onclick=solve;
+document.getElementById('randomQuestionBtn').onclick=startRandomQuestion;
+document.getElementById('manualQuestionBtn').onclick=()=>enterQuestionEditing();
+document.getElementById('finishQuestionBtn').onclick=finishQuestionEditing;
+document.getElementById('restoreFixedQuestionBtn').onclick=restoreExampleQuestion;
 document.getElementById('publishBtn').onclick=publishQuestion;
 document.getElementById('verifyBtn').onclick=verifyStart;
 document.getElementById('nextBtn').onclick=verifyNext;
@@ -1849,6 +2014,7 @@ document.getElementById('resetBtn').onclick=()=>{ restoreQuestionState();
 loadQuestionFromLocation();
 document.getElementById('exitInfo').textContent=(exitCol+1);
 buildInstr(); buildTarget(); enterDesign();
+updateQuestionEditorUI();
 configurePlayerMode();
 if(window.THREE) initThreeBoard();
 else window.addEventListener('load',initThreeBoard,{once:true});

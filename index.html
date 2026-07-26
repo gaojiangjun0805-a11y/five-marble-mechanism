@@ -126,6 +126,9 @@
           <button id="manualQuestionBtn">✥ 手动出题</button>
           <button id="finishQuestionBtn" class="question-active" style="display:none;">✓ 确认题面</button>
           <button id="restoreFixedQuestionBtn" class="small">还原示例题</button>
+          <button id="saveQuestionBtn" class="small">⇩ 保存题目</button>
+          <button id="loadQuestionBtn" class="small">⇧ 读取题目</button>
+          <input id="questionFileInput" type="file" accept=".json,application/json" hidden>
           <label>旋转次数
             <select id="rotationCountSelect" aria-label="旋转次数"></select>
           </label>
@@ -378,6 +381,34 @@ function toggleQuestionInstruction(index){
 function exportQuestionData(){
   const initial=fixedInitialWalls || emptyWalls();
   return cloneQuestionData({size:N,exitCol,balls,instr,target,initialWalls:initial});
+}
+function saveQuestionFile(){
+  const data=JSON.stringify(exportQuestionData(),null,2);
+  const blob=new Blob([data],{type:'application/json;charset=utf-8'});
+  const url=URL.createObjectURL(blob);
+  const link=document.createElement('a');
+  link.href=url;
+  link.download=`五珠机关盘题目-${instr.length}步.json`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),0);
+  setResult(`题目已保存为 JSON 文件，可发送给其他人读取。`);
+}
+async function importQuestionFile(file){
+  if(!file) return false;
+  try{
+    const question=JSON.parse(await file.text());
+    if(!applyQuestionData(question)) throw new Error('invalid question');
+    buildRotationCountSelect();
+    buildInstr(); buildTarget();
+    enterQuestionEditing('题目读取成功：可继续修改后确认，或直接发布答题网页。');
+    updateQuestionEditorUI();
+    return true;
+  }catch(error){
+    setResult('<span style="color:var(--bad)">⚠ 题目文件无效或版本不兼容，请选择本程序保存的 JSON 文件。</span>');
+    return false;
+  }
 }
 function restoreQuestionState(){
   if(questionSeed) applyQuestionData(questionSeed);
@@ -2018,6 +2049,12 @@ document.getElementById('randomQuestionBtn').onclick=startRandomQuestion;
 document.getElementById('manualQuestionBtn').onclick=()=>enterQuestionEditing();
 document.getElementById('finishQuestionBtn').onclick=finishQuestionEditing;
 document.getElementById('restoreFixedQuestionBtn').onclick=restoreExampleQuestion;
+document.getElementById('saveQuestionBtn').onclick=saveQuestionFile;
+document.getElementById('loadQuestionBtn').onclick=()=>document.getElementById('questionFileInput').click();
+document.getElementById('questionFileInput').onchange=async e=>{
+  await importQuestionFile(e.target.files?.[0]);
+  e.target.value='';
+};
 document.getElementById('rotationCountSelect').onchange=e=>{
   if(!questionEditing) return;
   if(setQuestionRotationCount(Number(e.target.value))){

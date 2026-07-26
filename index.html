@@ -643,8 +643,9 @@ function acceptGeneratedSolution(hw,vw){
   const candidate=cloneWalls(hw,vw);
   addFixedSupports(candidate.hw);
   if(!matchesTarget(candidate.hw,candidate.vw)) return false;
-  const seal=sealPaths(candidate.hw,candidate.vw);
-  if(!seal.ok || !matchesTarget(candidate.hw,candidate.vw)) return false;
+  // 题面采用离散下落规则，不需要沿运动轨迹补侧墙；逐墙删减后仍按完整模拟复核。
+  pruneWalls(candidate.hw,candidate.vw);
+  if(!matchesTarget(candidate.hw,candidate.vw)) return false;
   return storeSolution(candidate.hw,candidate.vw);
 }
 function gravityTimeline(){
@@ -953,7 +954,7 @@ async function solve(){
     renderSeq(sim.record);
     activateComparison(comparisonSolutionIndices(generatedIndices));
     const bestSolution=solutionHistory[bestIndex];
-    setResult(`<span style="color:var(--ok)">✓ 本次新增 ${generatedIndices.length} 套可行方案，已通过完整回放和封管校验。</span> ｜ <b>当前最优：方案 ${bestIndex+1} · ${formatSolutionScore(bestSolution.score)}</b>`);
+    setResult(`<span style="color:var(--ok)">✓ 本次新增 ${generatedIndices.length} 套有效方案，已逐墙删减到精简布局。</span> ｜ <b>当前最优：方案 ${bestIndex+1} · ${formatSolutionScore(bestSolution.score)}</b>`);
   }else{
     setResult(`<span style="color:var(--bad)">45 秒内未找到新的有效方案。当前已保留 ${solutionHistory.length} 套已验证方案，点击“再生成 3 解”会继续搜索不同分支。</span>`);
   }

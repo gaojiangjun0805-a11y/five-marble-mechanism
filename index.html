@@ -958,10 +958,7 @@ function initThreeBoard(){
     const fillLight=new THREE.PointLight(0xffc57a,18,22,2);
     fillLight.position.set(4,3,7); scene.add(fillLight);
 
-    const boardGroup=new THREE.Group();
-    // 与隐藏的 2D 点击画布保持同一网格中心，确保看见的格线就是可点击的格线。
-    boardGroup.position.y=0.38;
-    scene.add(boardGroup);
+    const boardGroup=new THREE.Group(); scene.add(boardGroup);
     const base=new THREE.Mesh(new THREE.BoxGeometry(11.25,11.25,0.52),threeWoodMaterial(THREE,'#67401f',0.68));
     base.position.z=0; base.castShadow=true; base.receiveShadow=true; boardGroup.add(base);
     const playfield=new THREE.Mesh(new THREE.BoxGeometry(10.42,10.42,0.2),threeWoodMaterial(THREE,'#d9b686',0.72));
@@ -1705,6 +1702,13 @@ function enterDesign(){
 
 /* ---------- 交互：画墙 / 拖珠 / 移出口 ---------- */
 function toMaze(evt){
+  if(threeState&&mode==='design'){
+    const rect=threeState.renderer.domElement.getBoundingClientRect();
+    const camera=threeState.camera;
+    const worldX=camera.left+(evt.clientX-rect.left)/rect.width*(camera.right-camera.left)-threeState.boardGroup.position.x;
+    const worldY=camera.top-(evt.clientY-rect.top)/rect.height*(camera.top-camera.bottom)-threeState.boardGroup.position.y;
+    return [(worldX+N/2)*(BOARD/N),(N/2-worldY)*(BOARD/N)];
+  }
   const rect=cv.getBoundingClientRect();
   const mx=(evt.clientX-rect.left)*(cv.width/rect.width);
   const my=(evt.clientY-rect.top)*(cv.height/rect.height);

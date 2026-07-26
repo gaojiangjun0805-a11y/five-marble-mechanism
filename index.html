@@ -61,6 +61,7 @@
   button.sizeBtn.active{background:var(--accent);border-color:var(--accent);color:#06101f;font-weight:700;}
   button.question-active{background:#e7bd72;border-color:#e7bd72;color:#211306;font-weight:700;}
   select{background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:7px;padding:6px 8px;font-size:13px;}
+  input[type="text"]{width:170px;background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:7px;padding:6px 8px;font-size:13px;}
   label{font-size:13px;color:var(--muted);}
   .chips{display:grid;grid-template-columns:repeat(10,1fr);gap:5px;}
   .chip{background:var(--panel2);border:1px solid var(--line);border-radius:6px;text-align:center;
@@ -129,6 +130,9 @@
           <button id="saveQuestionBtn" class="small">⇩ 保存题目</button>
           <button id="loadQuestionBtn" class="small">⇧ 读取题目</button>
           <input id="questionFileInput" type="file" accept=".json,application/json" hidden>
+          <label>题目名称
+            <input id="questionNameInput" type="text" maxlength="40" placeholder="例如：春季赛 A 题">
+          </label>
           <label>旋转次数
             <select id="rotationCountSelect" aria-label="旋转次数"></select>
           </label>
@@ -226,6 +230,7 @@ const FIXED_QUESTION = Object.freeze({
   instr: Object.freeze([1,-1,1,1,-1,-1,1,-1,-1,1,1,-1,1,1,-1,-1,1,-1,-1,1]),
   target: Object.freeze(['R','Y','B','G','P']),
 });
+const DEFAULT_QUESTION_NAME='未命名题目';
 const FIXED_EXIT_COL=FIXED_QUESTION.exitCol;
 const FIXED_TARGET=FIXED_QUESTION.target.slice();
 
@@ -233,7 +238,7 @@ const FIXED_TARGET=FIXED_QUESTION.target.slice();
 const DIRS = [[-1,0],[0,1],[1,0],[0,-1]];
 const S_DIR = 2;
 
-let N, hwall, vwall, exitCol, balls, instr, target;
+let N, hwall, vwall, exitCol, balls, instr, target, questionName=DEFAULT_QUESTION_NAME;
 let fixedInitialWalls = null;
 let questionSeed = null;
 let mode = 'design';           // 'design' | 'anim'
@@ -283,6 +288,7 @@ function validQuestionBalls(candidate){
 function cloneQuestionData(question){
   return {
     version:1,
+    name:question.name?.trim()||DEFAULT_QUESTION_NAME,
     size:question.size,
     exitCol:question.exitCol,
     balls:question.balls.map(ball=>({id:ball.id,ir:ball.ir,ic:ball.ic})),
@@ -300,6 +306,7 @@ function applyQuestionData(question){
   balls=question.balls.map(ball=>({id:ball.id,ir:ball.ir,ic:ball.ic}));
   instr=question.instr.map(direction=>direction===-1?-1:1);
   target=FIXED_TARGET.slice();
+  questionName=question.name?.trim()||DEFAULT_QUESTION_NAME;
   const defaults=emptyWalls();
   const supplied=question.initialWalls;
   hwall=validWallGrid(supplied?.hw,N+1,N)
@@ -313,12 +320,12 @@ function applyQuestionData(question){
   hwall[N][exitCol]=false;
   addFixedSupports(hwall);
   fixedInitialWalls=cloneWalls(hwall,vwall);
-  questionSeed=cloneQuestionData({size:N,exitCol,balls,instr,target,initialWalls:fixedInitialWalls});
+  questionSeed=cloneQuestionData({name:questionName,size:N,exitCol,balls,instr,target,initialWalls:fixedInitialWalls});
   attemptStartedAt=null; attemptFinishedAt=null;
   return true;
 }
 function syncQuestionSeed(){
-  questionSeed=cloneQuestionData({size:N,exitCol,balls,instr,target,initialWalls:fixedInitialWalls});
+  questionSeed=cloneQuestionData({name:questionName,size:N,exitCol,balls,instr,target,initialWalls:fixedInitialWalls});
 }
 function clearQuestionSolutions(){
   solutionHistory=[];
@@ -380,15 +387,24 @@ function toggleQuestionInstruction(index){
 }
 function exportQuestionData(){
   const initial=fixedInitialWalls || emptyWalls();
-  return cloneQuestionData({size:N,exitCol,balls,instr,target,initialWalls:initial});
+  return cloneQuestionData({name:questionName,size:N,exitCol,balls,instr,target,initialWalls:initial});
+}
+function setQuestionName(name){
+  questionName=String(name||'').trim().slice(0,40)||DEFAULT_QUESTION_NAME;
+  const input=document.getElementById('questionNameInput');
+  if(input&&input.value!==questionName) input.value=questionName;
+  syncQuestionSeed();
+  return questionName;
 }
 function saveQuestionFile(){
+  setQuestionName(document.getElementById('questionNameInput').value);
   const data=JSON.stringify(exportQuestionData(),null,2);
   const blob=new Blob([data],{type:'application/json;charset=utf-8'});
   const url=URL.createObjectURL(blob);
   const link=document.createElement('a');
   link.href=url;
-  link.download=`五珠机关盘题目-${instr.length}步.json`;
+  const safeName=questionName.replace(/[\\/:*?"<>|]/g,'_');
+  link.download=`${safeName}-${instr.length}步.json`;
   document.body.appendChild(link);
   link.click();
   link.remove();
@@ -1986,11 +2002,14 @@ function updateQuestionEditorUI(){
   const finish=document.getElementById('finishQuestionBtn');
   const hint=document.getElementById('questionEditHint');
   const countSelect=document.getElementById('rotationCountSelect');
+  const nameInput=document.getElementById('questionNameInput');
   panel.classList.toggle('is-editing',questionEditing);
   manual.disabled=questionEditing;
   finish.style.display=questionEditing?'inline-block':'none';
   countSelect.value=String(instr.length);
   countSelect.disabled=!questionEditing||playerMode;
+  nameInput.value=questionName;
+  nameInput.disabled=playerMode;
   hint.textContent=questionEditing
     ? `拖动五颗球设定起始位置；点击 1 至 ${instr.length} 号指令切换方向。出口与目标顺序固定。`
     : `随机题面会重置五球位置与 ${instr.length} 条旋转指令。`;
@@ -2055,6 +2074,7 @@ document.getElementById('questionFileInput').onchange=async e=>{
   await importQuestionFile(e.target.files?.[0]);
   e.target.value='';
 };
+document.getElementById('questionNameInput').oninput=e=>setQuestionName(e.target.value);
 document.getElementById('rotationCountSelect').onchange=e=>{
   if(!questionEditing) return;
   if(setQuestionRotationCount(Number(e.target.value))){

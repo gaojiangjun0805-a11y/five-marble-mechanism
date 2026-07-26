@@ -859,7 +859,7 @@ function threeWallGeometrySpec(){
   const height=0.30;
   return {floorTop,height,centerZ:floorTop+height/2,topZ:floorTop+height};
 }
-const BOARD_VIEW_HALF=6.2;
+const BOARD_VIEW_HALF=6.41;
 function createBoardCamera(THREE){
   const camera=new THREE.OrthographicCamera(-BOARD_VIEW_HALF,BOARD_VIEW_HALF,BOARD_VIEW_HALF,-BOARD_VIEW_HALF,0.1,100);
   camera.position.set(0,0,20);
@@ -915,6 +915,23 @@ function rebuildThreeWalls(){
   for(let r=0;r<N;r++) for(let c=0;c<=N;c++) if(vwall[r][c]) addThreeWall(threeState,'v',r,c,false);
   threeState.wallSignature=signature;
 }
+function updateThreeHoverGuide(state){
+  const guide=state?.hoverGuide;
+  const edge=mode==='design' ? hoverEdge : null;
+  if(!guide||!edge){ if(guide) guide.visible=false; return; }
+  const key=`${edge.type}:${edge.r}:${edge.c}`;
+  if(guide.userData.edgeKey!==key){
+    const horizontal=edge.type==='h';
+    guide.position.set(
+      horizontal ? edge.c+0.5-N/2 : edge.c-N/2,
+      horizontal ? N/2-edge.r : N/2-edge.r-0.5,
+      1.12,
+    );
+    guide.rotation.z=horizontal?0:Math.PI/2;
+    guide.userData.edgeKey=key;
+  }
+  guide.visible=true;
+}
 function initThreeBoard(){
   if(threeState||!window.THREE) return;
   const THREE=window.THREE;
@@ -941,7 +958,10 @@ function initThreeBoard(){
     const fillLight=new THREE.PointLight(0xffc57a,18,22,2);
     fillLight.position.set(4,3,7); scene.add(fillLight);
 
-    const boardGroup=new THREE.Group(); scene.add(boardGroup);
+    const boardGroup=new THREE.Group();
+    // 与隐藏的 2D 点击画布保持同一网格中心，确保看见的格线就是可点击的格线。
+    boardGroup.position.y=0.38;
+    scene.add(boardGroup);
     const base=new THREE.Mesh(new THREE.BoxGeometry(11.25,11.25,0.52),threeWoodMaterial(THREE,'#67401f',0.68));
     base.position.z=0; base.castShadow=true; base.receiveShadow=true; boardGroup.add(base);
     const playfield=new THREE.Mesh(new THREE.BoxGeometry(10.42,10.42,0.2),threeWoodMaterial(THREE,'#d9b686',0.72));
@@ -985,6 +1005,12 @@ function initThreeBoard(){
     });
 
     const wallGroup=new THREE.Group(); wallGroup.name='maze-walls'; boardGroup.add(wallGroup);
+    const hoverGuide=new THREE.Mesh(
+      new THREE.BoxGeometry(1.08,0.16,0.08),
+      new THREE.MeshBasicMaterial({color:'#ffe07a',transparent:true,opacity:0.96,depthTest:false}),
+    );
+    hoverGuide.name='maze-hover-guide'; hoverGuide.visible=false; hoverGuide.renderOrder=5;
+    boardGroup.add(hoverGuide);
     const ballGroup=new THREE.Group(); boardGroup.add(ballGroup);
     const ballGeometry=new THREE.SphereGeometry(0.31,28,18);
     const trailGeometry=new THREE.SphereGeometry(0.11,14,10);
@@ -1003,7 +1029,7 @@ function initThreeBoard(){
         ghost.visible=false; ballGroup.add(ghost); return ghost;
       });
     });
-    threeState={THREE,renderer,scene,camera,stage,boardGroup,wallGroup,ballMeshes,trailMeshes,shadowMeshes,wallSignature:''};
+    threeState={THREE,renderer,scene,camera,stage,boardGroup,wallGroup,hoverGuide,ballMeshes,trailMeshes,shadowMeshes,wallSignature:''};
     const resize=()=>{
       if(!threeState) return;
       const rect=stage.getBoundingClientRect();
@@ -1025,6 +1051,7 @@ function updateThreeBoard(){
   if(!threeState) return;
   const {boardGroup,ballMeshes,trailMeshes,shadowMeshes,renderer,scene,camera}=threeState;
   rebuildThreeWalls();
+  updateThreeHoverGuide(threeState);
   boardGroup.rotation.z=-theta*Math.PI/180;
   const unit=BOARD/N;
   for(const ball of balls){
@@ -1068,6 +1095,8 @@ function cloneThreeBoardForSolution(solution){
   threeState.wallSignature='';
   rebuildThreeWalls();
   const clone=threeState.boardGroup.clone(true);
+  const cloneHoverGuide=clone.getObjectByName('maze-hover-guide');
+  if(cloneHoverGuide) cloneHoverGuide.visible=false;
   const cloneWalls=clone.getObjectByName('maze-walls');
   if(cloneWalls){
     cloneWalls.traverse(node=>{
@@ -1686,7 +1715,7 @@ function pickEdge(x,y){
   if(gx<-0.4||gy<-0.4||gx>N+0.4||gy>N+0.4) return null;
   const col=Math.round(gx), row=Math.round(gy);
   const dv=Math.abs(gx-col), dh=Math.abs(gy-row);
-  const th=0.34;
+  const th=0.42;
   if(dv<dh){
     const r=Math.floor(gy);
     if(dv<th && col>=1 && col<=N-1 && r>=0 && r<N) return {type:'v', r, c:col};

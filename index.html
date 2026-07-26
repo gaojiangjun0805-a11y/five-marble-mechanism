@@ -126,8 +126,11 @@
           <button id="manualQuestionBtn">✥ 手动出题</button>
           <button id="finishQuestionBtn" class="question-active" style="display:none;">✓ 确认题面</button>
           <button id="restoreFixedQuestionBtn" class="small">还原示例题</button>
+          <label>旋转次数
+            <select id="rotationCountSelect" aria-label="旋转次数"></select>
+          </label>
         </div>
-        <div class="hint" id="questionEditHint">随机题面会重置五球位置与 20 条旋转指令。</div>
+        <div class="hint" id="questionEditHint">随机题面会重置五球位置与当前旋转次数。</div>
       </section>
       <div class="panel" style="max-width:560px;">
         <h2 id="instrTitle">旋转指令 · 20 次（题目给定）</h2>
@@ -288,7 +291,7 @@ function cloneQuestionData(question){
 function applyQuestionData(question){
   if(!question || question.size!==10 || !Number.isInteger(question.exitCol)
     || !validQuestionBalls(question.balls)
-    || !Array.isArray(question.instr) || question.instr.length!==20) return false;
+    || !Array.isArray(question.instr) || question.instr.length<1 || question.instr.length>20) return false;
   N=question.size;
   exitCol=FIXED_EXIT_COL;
   balls=question.balls.map(ball=>({id:ball.id,ir:ball.ir,ic:ball.ic}));
@@ -345,10 +348,22 @@ function randomizeQuestion(rng=Math.random){
     [cells[i],cells[swap]]=[cells[swap],cells[i]];
   }
   balls=FIXED_TARGET.map((id,index)=>({id,ir:cells[index].r,ic:cells[index].c}));
-  instr=Array.from({length:20},()=>rng()<0.5?-1:1);
+  const count=Math.max(1,Math.min(20,instr.length||FIXED_QUESTION.instr.length));
+  instr=Array.from({length:count},()=>rng()<0.5?-1:1);
   target=FIXED_TARGET.slice();
   exitCol=FIXED_EXIT_COL;
   rebuildQuestionBaseWalls();
+  return true;
+}
+function setQuestionRotationCount(count){
+  if(!Number.isInteger(count)||count<1||count>20) return false;
+  const next=instr.slice(0,count);
+  while(next.length<count) next.push(FIXED_QUESTION.instr[next.length] ?? 1);
+  instr=next;
+  hwall=fixedInitialWalls.hw.map(row=>row.slice());
+  vwall=fixedInitialWalls.vw.map(row=>row.slice());
+  clearQuestionSolutions();
+  syncQuestionSeed();
   return true;
 }
 function toggleQuestionInstruction(index){
@@ -1907,7 +1922,7 @@ cv.addEventListener('mouseleave',()=>{hoverEdge=null;});
 function buildInstr(){
   const box=document.getElementById('instrChips'); box.innerHTML='';
   const editable=questionEditing&&!playerMode;
-  document.getElementById('instrTitle').textContent=editable?'旋转指令 · 点击切换方向':'旋转指令 · 20 次（题目给定）';
+  document.getElementById('instrTitle').textContent=editable?'旋转指令 · 点击切换方向':`旋转指令 · ${instr.length} 次（题目给定）`;
   document.getElementById('instrHint').textContent=editable?'编辑中：点击任一编号切换顺时针 / 逆时针':'题面固定，不可修改';
   instr.forEach((v,i)=>{
     const d=document.createElement('div');
@@ -1939,12 +1954,26 @@ function updateQuestionEditorUI(){
   const manual=document.getElementById('manualQuestionBtn');
   const finish=document.getElementById('finishQuestionBtn');
   const hint=document.getElementById('questionEditHint');
+  const countSelect=document.getElementById('rotationCountSelect');
   panel.classList.toggle('is-editing',questionEditing);
   manual.disabled=questionEditing;
   finish.style.display=questionEditing?'inline-block':'none';
+  countSelect.value=String(instr.length);
+  countSelect.disabled=!questionEditing||playerMode;
   hint.textContent=questionEditing
-    ? '拖动五颗球设定起始位置；点击 1 至 20 号指令切换方向。出口与目标顺序固定。'
-    : '随机题面会重置五球位置与 20 条旋转指令。';
+    ? `拖动五颗球设定起始位置；点击 1 至 ${instr.length} 号指令切换方向。出口与目标顺序固定。`
+    : `随机题面会重置五球位置与 ${instr.length} 条旋转指令。`;
+}
+function buildRotationCountSelect(){
+  const select=document.getElementById('rotationCountSelect');
+  select.innerHTML='';
+  for(let count=1;count<=20;count++){
+    const option=document.createElement('option');
+    option.value=String(count);
+    option.textContent=`${count} 次`;
+    select.appendChild(option);
+  }
+  select.value=String(instr.length);
 }
 function loadQuestionFromLocation(){
   const encoded=queryParam('q');
@@ -1989,6 +2018,13 @@ document.getElementById('randomQuestionBtn').onclick=startRandomQuestion;
 document.getElementById('manualQuestionBtn').onclick=()=>enterQuestionEditing();
 document.getElementById('finishQuestionBtn').onclick=finishQuestionEditing;
 document.getElementById('restoreFixedQuestionBtn').onclick=restoreExampleQuestion;
+document.getElementById('rotationCountSelect').onchange=e=>{
+  if(!questionEditing) return;
+  if(setQuestionRotationCount(Number(e.target.value))){
+    buildInstr(); buildTarget(); updateQuestionEditorUI();
+    setResult(`旋转次数已设为 ${instr.length} 次。`);
+  }
+};
 document.getElementById('publishBtn').onclick=publishQuestion;
 document.getElementById('verifyBtn').onclick=verifyStart;
 document.getElementById('nextBtn').onclick=verifyNext;
@@ -2013,6 +2049,7 @@ document.getElementById('resetBtn').onclick=()=>{ restoreQuestionState();
 /* ---------- 启动 ---------- */
 loadQuestionFromLocation();
 document.getElementById('exitInfo').textContent=(exitCol+1);
+buildRotationCountSelect();
 buildInstr(); buildTarget(); enterDesign();
 updateQuestionEditorUI();
 configurePlayerMode();

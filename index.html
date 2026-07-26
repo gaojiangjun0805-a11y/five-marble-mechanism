@@ -859,6 +859,20 @@ function threeWallGeometrySpec(){
   const height=0.30;
   return {floorTop,height,centerZ:floorTop+height/2,topZ:floorTop+height};
 }
+const BOARD_VIEW_HALF=6.2;
+function createBoardCamera(THREE){
+  const camera=new THREE.OrthographicCamera(-BOARD_VIEW_HALF,BOARD_VIEW_HALF,BOARD_VIEW_HALF,-BOARD_VIEW_HALF,0.1,100);
+  camera.position.set(0,0,20);
+  camera.lookAt(0,0,0);
+  return camera;
+}
+function frameBoardCamera(camera,width,height){
+  const aspect=width/Math.max(1,height);
+  const halfX=aspect>=1 ? BOARD_VIEW_HALF*aspect : BOARD_VIEW_HALF;
+  const halfY=aspect>=1 ? BOARD_VIEW_HALF : BOARD_VIEW_HALF/aspect;
+  camera.left=-halfX; camera.right=halfX; camera.top=halfY; camera.bottom=-halfY;
+  camera.updateProjectionMatrix();
+}
 function threeWoodMaterial(THREE,color,roughness,metalness=0.02){
   return new THREE.MeshStandardMaterial({color,roughness,metalness});
 }
@@ -917,8 +931,7 @@ function initThreeBoard(){
     renderer.toneMappingExposure=1.15;
     host.appendChild(renderer.domElement);
     const scene=new THREE.Scene();
-    const camera=new THREE.PerspectiveCamera(50,1,0.1,100);
-    camera.position.set(0,-7.4,19.2); camera.lookAt(0,0,0);
+    const camera=createBoardCamera(THREE);
     scene.add(new THREE.HemisphereLight(0xffefd7,0x1b1008,2.1));
     const keyLight=new THREE.DirectionalLight(0xffe1b0,3.2);
     keyLight.position.set(-5,-7,14); keyLight.castShadow=true;
@@ -995,7 +1008,7 @@ function initThreeBoard(){
       if(!threeState) return;
       const rect=stage.getBoundingClientRect();
       renderer.setSize(Math.max(1,rect.width),Math.max(1,rect.height),false);
-      camera.aspect=rect.width/Math.max(1,rect.height); camera.updateProjectionMatrix();
+      frameBoardCamera(camera,rect.width,rect.height);
     };
     window.addEventListener('resize',resize); resize();
     stage.classList.add('is-three-ready');
@@ -1086,8 +1099,7 @@ function resizeComparisonSession(session){
   if(width===session.width && height===session.height) return;
   session.width=width; session.height=height;
   session.renderer.setSize(width,height,false);
-  session.camera.aspect=width/height;
-  session.camera.updateProjectionMatrix();
+  frameBoardCamera(session.camera,width,height);
 }
 function makeComparisonSession(index,slot){
   const solution=solutionHistory[index];
@@ -1110,8 +1122,7 @@ function makeComparisonSession(index,slot){
   renderer.toneMappingExposure=1.15;
   host.appendChild(renderer.domElement);
   const scene=new THREE.Scene();
-  const camera=new THREE.PerspectiveCamera(50,1,0.1,100);
-  camera.position.set(0,-7.4,19.2); camera.lookAt(0,0,0);
+  const camera=createBoardCamera(THREE);
   addComparisonLights(THREE,scene);
   const boardGroup=cloneThreeBoardForSolution(solution);
   scene.add(boardGroup);

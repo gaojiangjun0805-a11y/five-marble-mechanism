@@ -117,7 +117,7 @@
   body.screen-mode .left{width:min(760px,68vw);max-width:none;margin:10px auto 0;}
   body.screen-mode .right,body.screen-mode #questionEditor,body.screen-mode #solutionsPanel,body.screen-mode #compareStage,body.screen-mode #bigScreenPanel,body.screen-mode .left>.row,body.screen-mode #verifyBar{display:none!important;}
   body.screen-mode #instructionPanel{display:block!important;max-width:none!important;padding:8px 12px;margin-bottom:8px;}
-  body.screen-mode .board-stage{width:min(680px,64vh);margin:0 auto;}
+  body.screen-mode .board-stage{width:min(680px,58vh);margin:0 auto;}
   body.screen-mode .left>.panel:not(#instructionPanel){display:none;}
   .screen-ranking{position:fixed;right:20px;top:98px;width:260px;max-height:calc(100vh - 118px);padding:14px;border:1px solid #303943;border-radius:8px;background:#0e1318;overflow:auto;}
   .screen-ranking h2{margin:0 0 10px;color:#f0a757;font-size:14px;}
@@ -322,6 +322,9 @@ let bigScreenScores = [];
 let bigScreenAutoRunning = false;
 let bigScreenMessageId = 0;
 let lastScreenMessageId = 0;
+let screenPhaseQueue = [];
+let screenPhaseProcessing = false;
+let screenPhaseGeneration = 0;
 
 function queryParam(name){
   if(typeof window==='undefined'||!window.location||typeof URLSearchParams==='undefined') return null;
@@ -445,6 +448,64 @@ function shouldApplyScreenMessage(message){
   lastScreenMessageId=message.messageId;
   return true;
 }
+function updateScreenHud(message){
+  vStep=message.step||0; vRecord=(message.record||[]).slice(); dropSeq=vRecord.slice();
+  buildInstr(); highlightChip(vStep); renderSeq(vRecord);
+  document.getElementById('screenTeamName').textContent=message.team?.name||'未命名队伍';
+  document.getElementById('screenQuestionName').textContent=questionName;
+  document.getElementById('screenTeamTime').textContent=message.team?.manualTime||'00:00:00';
+  document.getElementById('screenWallCount').textContent=String(message.wallCount??0);
+  document.getElementById('screenProgress').textContent=`${vStep} / ${instr.length}`;
+  if(message.leaderboard) renderScreenRanking(message.leaderboard);
+}
+async function waitForScreenRotation(timeout=1800){
+  const until=performance.now()+timeout;
+  while(Math.abs(thetaTarget-theta)>0.05 && performance.now()<until) await sleep(16);
+  theta=thetaTarget;
+}
+function resetScreenPhaseQueue(){
+  screenPhaseGeneration++;
+  screenPhaseQueue=[];
+  screenPhaseProcessing=false;
+}
+function enqueueScreenPhase(message){
+  screenPhaseQueue.push(message);
+  void processScreenPhaseQueue();
+}
+async function processScreenPhaseQueue(){
+  if(screenPhaseProcessing) return;
+  const generation=screenPhaseGeneration;
+  screenPhaseProcessing=true;
+  while(generation===screenPhaseGeneration && screenPhaseQueue.length){
+    const message=screenPhaseQueue.shift();
+    if(message.type==='rotate'){
+      await waitForDisplayIdle();
+      if(generation!==screenPhaseGeneration) break;
+      updateScreenHud(message);
+      document.getElementById('screenStatus').textContent=`第 ${message.activeStep} 步旋转中`;
+      thetaTarget=message.rotation??thetaTarget;
+      await waitForScreenRotation();
+    }else if(message.type==='settle'){
+      applyFrame({pos:message.positions||{},exits:message.exits||[]});
+      updateScreenHud(message);
+      document.getElementById('screenStatus').textContent=`第 ${message.activeStep} 步珠子移动中`;
+    }else if(message.type==='stepComplete'){
+      await waitForDisplayIdle();
+      if(generation!==screenPhaseGeneration) break;
+      updateScreenHud(message);
+      document.getElementById('screenStatus').textContent=`已完成第 ${message.step} 步`;
+    }else if(message.type==='result'){
+      await waitForDisplayIdle();
+      if(generation!==screenPhaseGeneration) break;
+      updateScreenHud(message);
+      document.getElementById('screenStatus').textContent=message.text||'验证结束';
+    }
+  }
+  if(generation===screenPhaseGeneration){
+    screenPhaseProcessing=false;
+    if(screenPhaseQueue.length) void processScreenPhaseQueue();
+  }
+}
 function applyScreenMessage(message){
   if(!screenMode||!message||!message.N||!shouldApplyScreenMessage(message)) return;
   N=message.N; exitCol=message.exitCol;
@@ -453,6 +514,7 @@ function applyScreenMessage(message){
   hwall=message.hw.map(row=>row.slice()); vwall=message.vw.map(row=>row.slice());
   fixedInitialWalls=cloneWalls(hwall,vwall); questionName=message.questionName||DEFAULT_QUESTION_NAME;
   if(message.type==='state'||message.type==='start'||message.type==='reset'||!Object.keys(disp).length){
+    resetScreenPhaseQueue();
     mode='anim'; theta=0; thetaTarget=0; initDisp();
     for(const ball of balls){
       const pos=message.positions?.[ball.id];
@@ -460,22 +522,17 @@ function applyScreenMessage(message){
       const [x,y]=cellCenter(pos[0],pos[1]);
       Object.assign(disp[ball.id],{x,y,r:pos[0],c:pos[1],alpha:1,path:[],segment:null});
     }
-  }else if(message.type==='step'){
-    thetaTarget=message.rotation||thetaTarget;
-    applyFrame({pos:message.positions||{},exits:[]});
+    for(const id of message.record||[]) if(disp[id]) disp[id].alpha=0;
+    updateScreenHud(message);
+    if(message.type==='start') document.getElementById('screenStatus').textContent='验证进行中';
+    if(message.type==='reset') document.getElementById('screenStatus').textContent='等待下一组验证';
+    return;
   }
-  for(const id of message.record||[]) if(disp[id]) disp[id].alpha=0;
-  vStep=message.step||0; vRecord=(message.record||[]).slice(); dropSeq=vRecord.slice();
-  buildInstr(); highlightChip(vStep); renderSeq(vRecord);
-  document.getElementById('screenTeamName').textContent=message.team?.name||'未命名队伍';
-  document.getElementById('screenQuestionName').textContent=questionName;
-  document.getElementById('screenTeamTime').textContent=message.team?.manualTime||'00:00:00';
-  document.getElementById('screenWallCount').textContent=String(message.wallCount??0);
-  document.getElementById('screenProgress').textContent=`${vStep} / ${instr.length}`;
-  if(message.type==='start') document.getElementById('screenStatus').textContent='验证进行中';
-  if(message.type==='result') document.getElementById('screenStatus').textContent=message.text||'验证结束';
-  if(message.type==='reset') document.getElementById('screenStatus').textContent='等待下一组验证';
-  if(message.leaderboard) renderScreenRanking(message.leaderboard);
+  if(['rotate','settle','stepComplete','result'].includes(message.type)){
+    enqueueScreenPhase(message);
+    return;
+  }
+  updateScreenHud(message);
 }
 
 /* ---------- 初始化 ---------- */
@@ -1774,9 +1831,11 @@ function shade(hex){
 
 /* ---------- 渲染循环 ---------- */
 function loop(now=performance.now()){
-  const dt=Math.min(48,Math.max(1,now-lastFrameAt));
+  const elapsed=Math.max(1,now-lastFrameAt);
+  const dt=Math.min(48,elapsed);
   lastFrameAt=now;
-  theta += (thetaTarget-theta)*0.16;
+  const rotationBlend=1-Math.pow(0.72,elapsed/16.667);
+  theta += (thetaTarget-theta)*rotationBlend;
   if(Math.abs(thetaTarget-theta)<0.05) theta=thetaTarget;
   if(mode==='anim') advanceDisplay(dt);
   if(comparisonState) advanceComparisonDisplay(dt);
@@ -1913,7 +1972,7 @@ async function verifyStart(){
   highlightChip(0);
   broadcastBigScreen('start');
 }
-async function consumeSettles(){
+async function consumeSettles(syncToScreen=false,activeStep=vStep){
   let queued=false;
   while(vPtr<vEvents.length && vEvents[vPtr].t==='set'){
     const ev=vEvents[vPtr++];
@@ -1921,6 +1980,9 @@ async function consumeSettles(){
     queued=true;
     for(const id of ev.exits){ vRecord.push(id); }
     renderSeq(vRecord);
+    if(syncToScreen){
+      broadcastBigScreen('settle',{positions:ev.pos,exits:ev.exits,step:vStep,activeStep,record:vRecord.slice()});
+    }
   }
   if(queued) await waitForDisplayIdle();
 }
@@ -2034,14 +2096,16 @@ async function verifyNext(){
   verifyBusy=true;
   const ev=vEvents[vPtr++];        // 必为 rot
   thetaTarget=ev.theta;
+  const activeStep=vStep+1;
+  broadcastBigScreen('rotate',{rotation:ev.theta,rotationDirection:instr[vStep],step:vStep,activeStep});
   setResult(`第 ${vStep+1} 次旋转：${instr[vStep]===1?'↻ 顺时针':'↺ 逆时针'} 90°…`);
   await sleep(460);
-  await consumeSettles();
+  await consumeSettles(true,activeStep);
   vStep++;
   verifyBusy=false;
   updateStepInfo();
   highlightChip(vStep);
-  broadcastBigScreen('step',{rotation:ev.theta,rotationDirection:instr[vStep-1]});
+  broadcastBigScreen('stepComplete',{rotation:ev.theta,rotationDirection:instr[vStep-1],step:vStep});
   if(vStep>=instr.length){
     showResult(vRecord,vScore);
     const finalScore=teamScore(vScore,hwall,vwall,null);

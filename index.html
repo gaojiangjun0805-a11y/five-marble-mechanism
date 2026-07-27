@@ -190,7 +190,7 @@
         <h2>现场大屏展示</h2>
         <div class="row">
           <label>队伍名称 <input id="teamNameInput" type="text" maxlength="30" placeholder="例如：闪电队"></label>
-          <label>作答时间（秒） <input id="teamTimeInput" type="number" min="0" step="0.1" placeholder="手动填写"></label>
+          <label>作答时间 <input id="teamTimeInput" type="text" inputmode="numeric" maxlength="8" placeholder="00:00:00"></label>
           <span class="hint">当前板块：<b id="teamWallCount">0</b> 块</span>
         </div>
         <div class="row">
@@ -283,8 +283,20 @@ const playerMode=queryParam('mode')==='play';
 
 function bigScreenTeam(){
   const name=document.getElementById('teamNameInput')?.value?.trim()||'未命名队伍';
-  const timeValue=Number(document.getElementById('teamTimeInput')?.value);
-  return {name,manualTime:Number.isFinite(timeValue)&&timeValue>=0?timeValue:null};
+  const raw=document.getElementById('teamTimeInput')?.value?.trim()||'';
+  let seconds=null;
+  if(/^\d{1,3}:\d{2}:\d{2}$/.test(raw)){
+    const [hours,minutes,secs]=raw.split(':').map(Number);
+    if(minutes<60&&secs<60) seconds=hours*3600+minutes*60+secs;
+  }else if(raw!==''&&Number.isFinite(Number(raw))&&Number(raw)>=0){
+    seconds=Number(raw);
+  }
+  return {name,manualTime:seconds===null?null:formatClock(seconds),manualTimeSeconds:seconds};
+}
+function formatClock(seconds){
+  if(!Number.isFinite(seconds)||seconds<0) return '未填写';
+  const whole=Math.round(seconds), hours=Math.floor(whole/3600), minutes=Math.floor((whole%3600)/60), secs=whole%60;
+  return [hours,minutes,secs].map(value=>String(value).padStart(2,'0')).join(':');
 }
 function bigScreenPositions(){
   const positions={};
@@ -323,9 +335,9 @@ async function startBigScreenVerification(){
 function recordBigScreenScore(){
   const team=bigScreenTeam();
   const score=teamScore(vScore||simulate().score,hwall,vwall,null);
-  const item={name:team.name,completionStep:score.completionStep,wallCount:score.wallCount,time:team.manualTime,completed:score.completed};
+  const item={name:team.name,completionStep:score.completionStep,wallCount:score.wallCount,time:team.manualTime,timeSeconds:team.manualTimeSeconds,completed:score.completed};
   bigScreenScores.push(item);
-  bigScreenScores.sort((a,b)=>compareTeamScores({completed:a.completed,completionStep:a.completionStep,wallCount:a.wallCount,completionTimeMs:a.time},{completed:b.completed,completionStep:b.completionStep,wallCount:b.wallCount,completionTimeMs:b.time}));
+  bigScreenScores.sort((a,b)=>compareTeamScores({completed:a.completed,completionStep:a.completionStep,wallCount:a.wallCount,completionTimeMs:a.timeSeconds},{completed:b.completed,completionStep:b.completionStep,wallCount:b.wallCount,completionTimeMs:b.timeSeconds}));
   broadcastBigScreen('leaderboard',{leaderboard:bigScreenScores});
   setResult(`已记录 ${item.name}：${item.completed?`${item.completionStep} 步 · ${item.wallCount} 块板 · ${item.time??'未填'} 秒`:'未完成'}`);
 }
@@ -499,6 +511,9 @@ function restoreQuestionState(){
 }
 function fixedSupportEdges(){
   return balls.map(b=>({r:b.ir+1, c:b.ic}));
+}
+function isQuestionSupportEdge(t,r,c){
+  return t==='h' && fixedSupportEdges().some(edge=>edge.r===r&&edge.c===c);
 }
 function addFixedSupports(hw){
   for(const edge of fixedSupportEdges()) hw[edge.r][edge.c]=true;
@@ -802,7 +817,7 @@ function renderSolutionHistory(){
 function toggleEdge(hw,vw,e){ if(e.t==='h') hw[e.r][e.c]=!hw[e.r][e.c]; else vw[e.r][e.c]=!vw[e.r][e.c]; }
 function wallCount(hw,vw){
   let n=0;
-  for(let r=1;r<N;r++)for(let c=0;c<N;c++) if(hw[r][c])n++;
+  for(let r=1;r<N;r++)for(let c=0;c<N;c++) if(hw[r][c]&&!isQuestionSupportEdge('h',r,c))n++;
   for(let r=0;r<N;r++)for(let c=1;c<N;c++) if(vw[r][c])n++;
   return n;
 }

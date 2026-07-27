@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>五珠机关盘 · 现场大屏</title>
+<style>
+  :root{--bg:#07101a;--panel:#101d2b;--line:#35516c;--text:#edf4fb;--muted:#90a8bd;--gold:#e4b96d;}
+  *{box-sizing:border-box} html,body{margin:0;width:100%;height:100%;overflow:hidden;background:var(--bg);color:var(--text);font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif}
+  body{background:radial-gradient(circle at 50% 38%,#193348 0,#0c1a29 43%,#050b12 100%)}
+  .screen{width:100vw;height:100vh;display:grid;grid-template-columns:1fr minmax(620px,64vw) 1fr;grid-template-rows:auto 1fr;gap:16px;padding:28px 34px;background:linear-gradient(90deg,rgba(4,10,16,.78),transparent 28%,transparent 72%,rgba(4,10,16,.78))}
+  .top{grid-column:1/-1;display:flex;align-items:flex-end;justify-content:space-between;border-bottom:1px solid #29465e;padding-bottom:16px}
+  .eyebrow{font-size:13px;letter-spacing:3px;color:var(--gold);font-weight:700}.title{font-size:34px;font-weight:800;margin:6px 0 0}.team{font-size:26px;font-weight:700;text-align:right}.meta{margin-top:7px;color:var(--muted);font-size:14px;text-align:right}
+  .side{align-self:center}.side-card{background:rgba(15,28,42,.9);border:1px solid var(--line);border-radius:10px;padding:18px;box-shadow:0 12px 30px #0005}.side-card h2{font-size:15px;color:var(--gold);margin:0 0 15px}.stat{display:flex;justify-content:space-between;gap:12px;padding:12px 0;border-bottom:1px solid #294156;color:var(--muted)}.stat strong{color:var(--text);font-size:20px}.steps{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}.step{border:1px solid #294156;border-radius:5px;padding:7px 2px;text-align:center;font-size:13px;color:#dce7ef}.step small{display:block;color:var(--muted);font-size:9px;margin-bottom:2px}.step.active{border-color:var(--gold);color:var(--gold);background:#4a351866}.step.done{opacity:.4}
+  .stage{align-self:center;justify-self:center;width:min(64vw,760px);aspect-ratio:16/12;display:flex;align-items:center;justify-content:center;position:relative}.board-frame{width:min(62vw,680px);aspect-ratio:1;border:16px solid #8c5c2d;border-radius:20px;background:#d0a15c;box-shadow:0 20px 40px #0008, inset 0 0 0 5px #e1bd7d;padding:18px;transition:transform .55s cubic-bezier(.2,.8,.2,1)}canvas{width:100%;height:100%;display:block;background:#d9b777;border:3px solid #6f4825}.board-label{position:absolute;bottom:-10px;color:var(--muted);font-size:13px;letter-spacing:2px}.empty{position:absolute;text-align:center;color:var(--muted);font-size:18px;pointer-events:none}.empty b{display:block;color:var(--gold);font-size:28px;margin-bottom:8px}
+  .result{margin-top:15px;text-align:center;color:#81e5a1;font-size:18px;font-weight:700;min-height:25px}.result.bad{color:#ff8e8e}.record{display:flex;justify-content:center;gap:9px;margin-top:10px;min-height:30px}.marble{width:25px;height:25px;border-radius:50%;border:2px solid #fff8;box-shadow:0 3px 8px #0008}.R{background:#f04747}.Y{background:#f4ca36}.B{background:#517bf2}.G{background:#39bd70}.P{background:#a46bea}
+  .leaderboard table{width:100%;border-collapse:collapse;font-size:13px}.leaderboard th{color:var(--muted);font-weight:500;text-align:left;padding-bottom:8px}.leaderboard td{padding:9px 2px;border-top:1px solid #294156}.leaderboard tr:first-child td{color:var(--gold);font-weight:700}.rank{width:25px;color:var(--gold)}
+  @media(max-width:1100px){.screen{grid-template-columns:190px minmax(440px,1fr) 210px;padding:18px;gap:10px}.title{font-size:26px}.team{font-size:20px}.board-frame{width:min(55vw,560px)}}
+</style>
+</head>
+<body>
+<main class="screen">
+  <header class="top"><div><div class="eyebrow">现场大屏 · 五珠机关盘</div><h1 class="title" id="questionTitle">等待题面</h1></div><div><div class="team" id="teamName">等待队伍</div><div class="meta">作答时间 <b id="teamTime">未填写</b> 秒　|　板块 <b id="wallCount">0</b> 块</div></div></header>
+  <aside class="side"><div class="side-card"><h2>旋转步骤</h2><div class="steps" id="steps"></div></div></aside>
+  <section class="stage"><div class="board-frame" id="boardFrame"><canvas id="board" width="620" height="620"></canvas></div><div class="empty" id="empty"><b>大屏展示</b>请从后台打开题面并开始验证</div><div class="board-label">固定出口　↓</div><div class="result" id="result"></div><div class="record" id="record"></div></section>
+  <aside class="side"><div class="side-card leaderboard"><h2>现场排行榜</h2><table><thead><tr><th>#</th><th>队伍</th><th>步数</th><th>板块</th><th>用时</th></tr></thead><tbody id="ranking"><tr><td colspan="5" style="color:var(--muted);padding-top:18px">等待成绩</td></tr></tbody></table></div></aside>
+</main>
+<script>
+const COLORS={R:'#f04747',Y:'#f4ca36',B:'#517bf2',G:'#39bd70',P:'#a46bea'};
+let state=null;
+const canvas=document.getElementById('board'),ctx=canvas.getContext('2d');
+const channel=typeof BroadcastChannel==='function'?new BroadcastChannel('five-marble-big-screen'):null;
+function esc(value){return String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function cellCenter(r,c,N){const u=canvas.width/N;return [(c+.5)*u,(r+.5)*u];}
+function draw(){if(!state)return;const N=state.N,u=canvas.width/N;ctx.clearRect(0,0,canvas.width,canvas.height);ctx.fillStyle='#d9b777';ctx.fillRect(0,0,canvas.width,canvas.height);ctx.strokeStyle='#c79a5d';ctx.lineWidth=1;for(let i=1;i<N;i++){ctx.beginPath();ctx.moveTo(i*u,0);ctx.lineTo(i*u,canvas.height);ctx.moveTo(0,i*u);ctx.lineTo(canvas.width,i*u);ctx.stroke();}ctx.strokeStyle='#805025';ctx.lineWidth=5;for(let r=0;r<=N;r++)for(let c=0;c<N;c++)if(state.hw?.[r]?.[c]){ctx.beginPath();ctx.moveTo(c*u,r*u);ctx.lineTo((c+1)*u,r*u);ctx.stroke();}for(let r=0;r<N;r++)for(let c=0;c<=N;c++)if(state.vw?.[r]?.[c]){ctx.beginPath();ctx.moveTo(c*u,r*u);ctx.lineTo(c*u,(r+1)*u);ctx.stroke();}ctx.strokeStyle='#54df7b';ctx.lineWidth=8;ctx.beginPath();ctx.moveTo(state.exitCol*u,canvas.height);ctx.lineTo((state.exitCol+1)*u,canvas.height);ctx.stroke();for(const id of ['R','Y','B','G','P']){const p=state.positions?.[id];if(!p)continue;const [x,y]=cellCenter(p[0],p[1],N);ctx.beginPath();ctx.arc(x,y,u*.26,0,Math.PI*2);ctx.fillStyle=COLORS[id];ctx.fill();ctx.strokeStyle='#fff9';ctx.lineWidth=2;ctx.stroke();ctx.shadowColor='#0008';ctx.shadowBlur=8;ctx.shadowOffsetY=4;ctx.fill();ctx.shadowColor='transparent';}}
+function renderSteps(){const box=document.getElementById('steps');box.innerHTML='';(state?.instr||[]).forEach((v,i)=>{const d=document.createElement('div');d.className='step '+(i<=(state.step||0)-1?'done ':'')+(i===(state.step||0)&&state.running?'active':'');d.innerHTML=`<small>${i+1}</small>${v===1?'↻':'↺'}`;box.appendChild(d);});}
+function renderRecord(){const box=document.getElementById('record');box.innerHTML='';(state?.record||[]).forEach(id=>{const d=document.createElement('span');d.className='marble '+id;d.title=id;box.appendChild(d);});}
+function renderRanking(){const body=document.getElementById('ranking');const rows=state?.leaderboard||[];body.innerHTML=rows.length?rows.map((r,i)=>`<tr><td class="rank">${i+1}</td><td>${esc(r.name)}</td><td>${r.completed?r.completionStep:'-'}</td><td>${r.wallCount??'-'}</td><td>${r.time??'-'}s</td></tr>`).join(''):'<tr><td colspan="5" style="color:var(--muted);padding-top:18px">等待成绩</td></tr>';}
+function apply(message){state={...(state||{}),...message,step:message.step??state?.step??0,record:message.record??state?.record??[],running:message.type==='start'||message.type==='step'?true:state?.running};if(message.team){document.getElementById('teamName').textContent=message.team.name;document.getElementById('teamTime').textContent=message.team.manualTime??'未填写';}if(message.questionName)document.getElementById('questionTitle').textContent=message.questionName;document.getElementById('wallCount').textContent=message.wallCount??0;document.getElementById('empty').style.display='none';if(message.type==='start'){document.getElementById('result').textContent='验证开始';document.getElementById('result').className='result';document.getElementById('boardFrame').style.transform='rotate(0deg)';}if(message.type==='step'){document.getElementById('boardFrame').style.transform=`rotate(${message.rotation||0}deg)`;document.getElementById('result').textContent=`第 ${message.step} 步：${message.rotationDirection===1?'顺时针':'逆时针'}旋转`;setTimeout(()=>document.getElementById('boardFrame').style.transform='rotate(0deg)',700);}if(message.type==='result'){state.running=false;document.getElementById('result').textContent=message.text||'验证结束';document.getElementById('result').className='result '+(message.completed?'':'bad');}if(message.leaderboard)state.leaderboard=message.leaderboard;draw();renderSteps();renderRecord();renderRanking();}
+function receive(message){if(message)apply(message);}
+channel?.addEventListener('message',e=>receive(e.data));window.addEventListener('message',e=>receive(e.data));
+</script>
+</body>
+</html>

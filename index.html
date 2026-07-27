@@ -185,6 +185,21 @@
         <h2>已生成的解 · 步数 → 板块 · ★当前最优</h2>
         <div class="row" id="solutionTabs"></div>
       </div>
+
+      <section class="panel setter-only" id="bigScreenPanel">
+        <h2>现场大屏展示</h2>
+        <div class="row">
+          <label>队伍名称 <input id="teamNameInput" type="text" maxlength="30" placeholder="例如：闪电队"></label>
+          <label>作答时间（秒） <input id="teamTimeInput" type="number" min="0" step="0.1" placeholder="手动填写"></label>
+          <span class="hint">当前板块：<b id="teamWallCount">0</b> 块</span>
+        </div>
+        <div class="row">
+          <button class="primary" id="openBigScreenBtn">▣ 打开大屏展示</button>
+          <button id="startBigScreenBtn">▶ 开始大屏验证</button>
+          <button class="small" id="saveTeamScoreBtn">＋ 记录本队成绩</button>
+        </div>
+        <div class="hint">先在本页按现场实际操作逐块摆墙，再点击开始验证。大屏会同步显示旋转步骤、出球顺序和成绩。</div>
+      </section>
     </div>
 
     <div class="right">
@@ -256,12 +271,64 @@ let attemptStartedAt = null, attemptFinishedAt = null;
 let comparisonState = null;
 let questionEditing = false;
 let questionDragMoved = false;
+let bigScreenWindow = null;
+let bigScreenChannel = typeof BroadcastChannel==='function' ? new BroadcastChannel('five-marble-big-screen') : null;
+let bigScreenScores = [];
 
 function queryParam(name){
   if(typeof window==='undefined'||!window.location||typeof URLSearchParams==='undefined') return null;
   return new URLSearchParams(window.location.search).get(name);
 }
 const playerMode=queryParam('mode')==='play';
+
+function bigScreenTeam(){
+  const name=document.getElementById('teamNameInput')?.value?.trim()||'未命名队伍';
+  const timeValue=Number(document.getElementById('teamTimeInput')?.value);
+  return {name,manualTime:Number.isFinite(timeValue)&&timeValue>=0?timeValue:null};
+}
+function bigScreenPositions(){
+  const positions={};
+  balls.forEach(ball=>{ positions[ball.id]=[ball.ir,ball.ic]; });
+  for(let i=Math.min(vPtr,vEvents.length-1);i>=0;i--){
+    const event=vEvents[i];
+    if(event?.t==='set') return event.pos;
+  }
+  return positions;
+}
+function bigScreenPayload(type='state',extra={}){
+  const team=bigScreenTeam();
+  return {type, questionName, team, wallCount:wallCount(hwall,vwall), N, exitCol,
+    balls:balls.map(ball=>({id:ball.id,ir:ball.ir,ic:ball.ic})),
+    instr:instr.slice(), target:target.slice(), hw:hwall.map(row=>row.slice()), vw:vwall.map(row=>row.slice()),
+    positions:bigScreenPositions(), step:vStep, record:vRecord.slice(), ...extra};
+}
+function broadcastBigScreen(type='state',extra={}){
+  const wallCountEl=document.getElementById('teamWallCount');
+  if(wallCountEl) wallCountEl.textContent=String(wallCount(hwall,vwall));
+  const message=bigScreenPayload(type,extra);
+  try{ bigScreenChannel?.postMessage(message); }catch(error){}
+  try{ if(bigScreenWindow&&!bigScreenWindow.closed) bigScreenWindow.postMessage(message,'*'); }catch(error){}
+}
+function openBigScreen(){
+  bigScreenWindow=window.open('bigscreen.html','fiveMarbleBigScreen','popup=yes,width=1600,height=900');
+  if(!bigScreenWindow){ setResult('<span style="color:var(--bad)">⚠ 浏览器拦截了大屏窗口，请允许弹出窗口。</span>'); return; }
+  setTimeout(()=>broadcastBigScreen('state'),500);
+  setResult('大屏展示已打开。可拖到现场投影或第二块屏幕。');
+}
+async function startBigScreenVerification(){
+  if(questionEditing) finishQuestionEditing();
+  await verifyStart();
+  broadcastBigScreen('start');
+}
+function recordBigScreenScore(){
+  const team=bigScreenTeam();
+  const score=teamScore(vScore||simulate().score,hwall,vwall,null);
+  const item={name:team.name,completionStep:score.completionStep,wallCount:score.wallCount,time:team.manualTime,completed:score.completed};
+  bigScreenScores.push(item);
+  bigScreenScores.sort((a,b)=>compareTeamScores({completed:a.completed,completionStep:a.completionStep,wallCount:a.wallCount,completionTimeMs:a.time},{completed:b.completed,completionStep:b.completionStep,wallCount:b.wallCount,completionTimeMs:b.time}));
+  broadcastBigScreen('leaderboard',{leaderboard:bigScreenScores});
+  setResult(`已记录 ${item.name}：${item.completed?`${item.completionStep} 步 · ${item.wallCount} 块板 · ${item.time??'未填'} 秒`:'未完成'}`);
+}
 
 /* ---------- 初始化 ---------- */
 function initState(){
@@ -449,6 +516,7 @@ function toggleInternalWall(t,r,c){
   else if(t==='v') vwall[r][c]=!vwall[r][c];
   else return false;
   if(attemptStartedAt===null){ attemptStartedAt=performance.now(); attemptFinishedAt=null; }
+  broadcastBigScreen('state');
   return true;
 }
 function clearInternalWalls(){
@@ -456,6 +524,7 @@ function clearInternalWalls(){
   for(let r=0;r<N;r++)for(let c=1;c<N;c++) vwall[r][c]=false;
   addFixedSupports(hwall);
   attemptStartedAt=null; attemptFinishedAt=null;
+  broadcastBigScreen('state');
 }
 function emptyWalls(){
   const hw = Array.from({length:N+1},()=>Array(N).fill(false));
@@ -475,6 +544,7 @@ function setExit(col){
   exitCol=col;
   hwall[N][exitCol]=false;
   document.getElementById('exitInfo').textContent=(exitCol+1);
+  broadcastBigScreen('state');
 }
 
 /* ---------- 物理：静置 ---------- */
@@ -711,6 +781,7 @@ function loadSolution(index){
   hwall=copy.hw; vwall=copy.vw; activeSolutionIndex=index;
   attemptStartedAt=null; attemptFinishedAt=null;
   renderSolutionHistory();
+  broadcastBigScreen('state');
   return true;
 }
 function renderSolutionHistory(){
@@ -1683,6 +1754,7 @@ async function verifyStart(){
   verifyBusy=false;
   updateStepInfo();
   highlightChip(0);
+  broadcastBigScreen('start');
 }
 async function consumeSettles(){
   let queued=false;
@@ -1812,8 +1884,11 @@ async function verifyNext(){
   verifyBusy=false;
   updateStepInfo();
   highlightChip(vStep);
+  broadcastBigScreen('step',{rotation:ev.theta,rotationDirection:instr[vStep-1]});
   if(vStep>=instr.length){
     showResult(vRecord,vScore);
+    const finalScore=teamScore(vScore,hwall,vwall,null);
+    broadcastBigScreen('result',{completed:finalScore.completed,text:finalScore.completed?`作答正确 · ${finalScore.completionStep} 步 · ${finalScore.wallCount} 块板`:'作答未完成'});
   }else{
     setResult(`第 ${vStep} 次完成，珠子已稳定。已掉落 ${vRecord.length} 颗。`);
   }
@@ -2076,6 +2151,11 @@ document.getElementById('questionFileInput').onchange=async e=>{
   e.target.value='';
 };
 document.getElementById('questionNameInput').oninput=e=>setQuestionName(e.target.value);
+document.getElementById('teamNameInput').oninput=()=>broadcastBigScreen('state');
+document.getElementById('teamTimeInput').oninput=()=>broadcastBigScreen('state');
+document.getElementById('openBigScreenBtn').onclick=openBigScreen;
+document.getElementById('startBigScreenBtn').onclick=startBigScreenVerification;
+document.getElementById('saveTeamScoreBtn').onclick=recordBigScreenScore;
 document.getElementById('rotationCountSelect').onchange=e=>{
   if(!questionEditing) return;
   if(setQuestionRotationCount(Number(e.target.value))){
@@ -2111,6 +2191,7 @@ buildRotationCountSelect();
 buildInstr(); buildTarget(); enterDesign();
 updateQuestionEditorUI();
 configurePlayerMode();
+if(!playerMode) broadcastBigScreen('state');
 if(window.THREE) initThreeBoard();
 else window.addEventListener('load',initThreeBoard,{once:true});
 loop();

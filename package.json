@@ -1,0 +1,38 @@
+{
+  "name": "five-marble-mechanism-live",
+  "version": "1.0.0",
+  "description": "五珠机关盘现场控制台与大屏展示",
+  "main": "electron-main.cjs",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dist:win": "electron-builder --win nsis"
+  },
+  "devDependencies": {
+    "electron": "^31.7.7",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.ggame.five-marble-mechanism",
+    "productName": "五珠机关盘现场版",
+    "asar": true,
+    "files": [
+      "index.html",
+      "bigscreen.html",
+      "electron-main.cjs",
+      "play.html",
+      "vendor/**/*",
+      "assets/**/*"
+    ],
+    "win": {
+      "target": ["nsis"],
+      "artifactName": "五珠机关盘现场版-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "五珠机关盘现场版"
+    }
+  }
+}

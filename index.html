@@ -320,6 +320,8 @@ let bigScreenWindow = null;
 let bigScreenChannel = typeof BroadcastChannel==='function' ? new BroadcastChannel('five-marble-big-screen') : null;
 let bigScreenScores = [];
 let bigScreenAutoRunning = false;
+let bigScreenMessageId = 0;
+let lastScreenMessageId = 0;
 
 function queryParam(name){
   if(typeof window==='undefined'||!window.location||typeof URLSearchParams==='undefined') return null;
@@ -361,7 +363,7 @@ function bigScreenPositions(){
 }
 function bigScreenPayload(type='state',extra={}){
   const team=bigScreenTeam();
-  return {type, questionName, team, wallCount:wallCount(hwall,vwall), N, exitCol,
+  return {type, messageId:++bigScreenMessageId, questionName, team, wallCount:wallCount(hwall,vwall), N, exitCol,
     balls:balls.map(ball=>({id:ball.id,ir:ball.ir,ic:ball.ic})),
     instr:instr.slice(), target:target.slice(), hw:hwall.map(row=>row.slice()), vw:vwall.map(row=>row.slice()),
     positions:bigScreenPositions(), step:vStep, record:vRecord.slice(), ...extra};
@@ -437,8 +439,14 @@ function renderScreenRanking(items=[]){
     row.append(rank,name,score); list.appendChild(row);
   });
 }
+function shouldApplyScreenMessage(message){
+  if(!Number.isInteger(message?.messageId)) return true;
+  if(message.messageId<=lastScreenMessageId) return false;
+  lastScreenMessageId=message.messageId;
+  return true;
+}
 function applyScreenMessage(message){
-  if(!screenMode||!message||!message.N) return;
+  if(!screenMode||!message||!message.N||!shouldApplyScreenMessage(message)) return;
   N=message.N; exitCol=message.exitCol;
   balls=message.balls.map(ball=>({...ball}));
   instr=message.instr.slice(); target=message.target.slice();

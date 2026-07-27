@@ -13,7 +13,7 @@ function createWindow(){
       nodeIntegration: false,
     },
   });
-  mainWindow.loadFile(path.join(__dirname,'index.html'));
+  mainWindow.loadFile(path.join(__dirname,'live.html'));
 }
 
 app.whenReady().then(()=>{

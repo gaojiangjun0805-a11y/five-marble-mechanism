@@ -18,6 +18,7 @@
     "asar": true,
     "files": [
       "index.html",
+      "live.html",
       "bigscreen.html",
       "electron-main.cjs",
       "play.html",

@@ -85,6 +85,28 @@
   .question-editor.is-editing{border-color:#a87936;background:rgba(40,31,20,.94);}
   body.player-mode .setter-only{display:none!important;}
   body.player-mode #solutionsPanel,body.player-mode #compareStage{display:none!important;}
+  body.live-mode{padding:12px;background:#080b0f;}
+  body.live-mode::before{display:none;}
+  body.live-mode .game-intro{max-width:1440px;min-height:0;margin:0 auto 12px;padding:12px 16px;background:none;border:1px solid #303943;border-radius:8px;display:flex;align-items:center;gap:18px;}
+  body.live-mode .game-intro h1{font-size:22px;margin:0;white-space:nowrap;}
+  body.live-mode .game-intro p{font-size:12px;margin-left:auto;}
+  body.live-mode .game-kicker,body.live-mode .player-rules{display:none;}
+  body.live-mode .wrap{display:grid;grid-template-columns:minmax(620px,1fr) 390px;gap:12px;max-width:1440px;margin:0 auto;align-items:start;}
+  body.live-mode .left{width:100%;max-width:900px;justify-self:center;}
+  body.live-mode .right{width:100%;min-width:0;max-width:none;position:sticky;top:12px;}
+  body.live-mode #questionEditor,body.live-mode #solutionsPanel,body.live-mode #compareStage,body.live-mode .right .panel:not(#bigScreenPanel):not(:first-child){display:none!important;}
+  body.live-mode #bigScreenPanel{border-color:#d48638;background:#11161b;border-radius:8px;}
+  body.live-mode .panel{border-radius:8px;background:#10151b;border-color:#303943;}
+  body.live-mode .board-stage{width:min(680px,100%);margin:0 auto;}
+  body.live-mode .left>.panel:nth-of-type(2){max-width:680px!important;margin-left:auto;margin-right:auto;}
+  body.live-mode #solveBtn,body.live-mode #publishBtn,body.live-mode #playBtn,body.live-mode #quickBtn,body.live-mode #sealBtn,body.live-mode #editBtn,body.live-mode #verifyBtn{display:none!important;}
+  body.live-mode button.primary,body.live-mode button.go{background:#d48638;border-color:#d48638;color:#111;font-weight:800;}
+  body.live-mode input:focus,body.live-mode button:focus-visible{outline:2px solid #f0a757;outline-offset:2px;}
+  .live-rank-list{list-style:none;padding:0;margin:10px 0 0;display:grid;gap:6px;}
+  .live-rank-list li{display:grid;grid-template-columns:24px 1fr auto;gap:8px;padding:8px 0;border-top:1px solid #303943;font-size:12px;}
+  .live-rank-list b{color:#e4a65e;}
+  .live-only{display:none;}
+  body.live-mode .live-only{display:inline-flex;}
   @media (max-width:720px){
     body{padding:12px;}
     .game-intro{min-height:0;margin-bottom:12px;padding:10px 0 13px;background-size:430px auto;background-position:120px center;}
@@ -197,8 +219,10 @@
           <button class="primary" id="openBigScreenBtn">▣ 打开大屏展示</button>
           <button id="startBigScreenBtn">▶ 开始大屏验证</button>
           <button class="small" id="saveTeamScoreBtn">＋ 记录本队成绩</button>
+          <button class="small live-only" id="liveLoadQuestionBtn">读取题目</button>
         </div>
         <div class="hint">先在本页按现场实际操作逐块摆墙，再点击开始验证。大屏会同步显示旋转步骤、出球顺序和成绩。</div>
+        <ol class="live-rank-list" id="operatorRanking"></ol>
       </section>
     </div>
 
@@ -280,6 +304,7 @@ function queryParam(name){
   return new URLSearchParams(window.location.search).get(name);
 }
 const playerMode=queryParam('mode')==='play';
+const liveMode=queryParam('mode')==='live';
 
 function bigScreenTeam(){
   const name=document.getElementById('teamNameInput')?.value?.trim()||'未命名队伍';
@@ -342,8 +367,14 @@ function recordBigScreenScore(){
   const item={name:team.name,completionStep:score.completionStep,wallCount:score.wallCount,time:team.manualTime,timeSeconds:team.manualTimeSeconds,completed:score.completed};
   bigScreenScores.push(item);
   bigScreenScores.sort((a,b)=>compareTeamScores({completed:a.completed,completionStep:a.completionStep,wallCount:a.wallCount,completionTimeMs:a.timeSeconds},{completed:b.completed,completionStep:b.completionStep,wallCount:b.wallCount,completionTimeMs:b.timeSeconds}));
+  renderOperatorRanking();
   broadcastBigScreen('leaderboard',{leaderboard:bigScreenScores});
   setResult(`已记录 ${item.name}：${item.completed?`${item.completionStep} 步 · ${item.wallCount} 块板 · ${item.time??'未填'} 秒`:'未完成'}`);
+}
+function renderOperatorRanking(){
+  const list=document.getElementById('operatorRanking');
+  if(!list) return;
+  list.innerHTML=bigScreenScores.map((item,index)=>`<li><b>${index+1}</b><span>${item.name}</span><span>${item.completed?`${item.completionStep}步 · ${item.wallCount}板 · ${item.time||'未填时间'}`:'未完成'}</span></li>`).join('');
 }
 
 /* ---------- 初始化 ---------- */
@@ -501,7 +532,13 @@ async function importQuestionFile(file){
     if(!applyQuestionData(question)) throw new Error('invalid question');
     buildRotationCountSelect();
     buildInstr(); buildTarget();
-    enterQuestionEditing('题目读取成功：可继续修改后确认，或直接发布答题网页。');
+    if(liveMode){
+      enterDesign();
+      setResult('题目读取成功。请按选手现场方案逐块摆板。');
+      broadcastBigScreen('state');
+    }else{
+      enterQuestionEditing('题目读取成功：可继续修改后确认，或直接发布答题网页。');
+    }
     updateQuestionEditorUI();
     return true;
   }catch(error){
@@ -2151,6 +2188,16 @@ function configurePlayerMode(){
   document.getElementById('gameSummary').textContent='只可插入或移除浅色木板，验证你的机关设计。';
   document.getElementById('verifyBtn').textContent='⏭ 验证答案';
 }
+function configureLiveMode(){
+  if(!liveMode) return;
+  document.body.classList.add('live-mode');
+  document.getElementById('gameTitle').textContent='五珠机关盘 · 现场验证控制台';
+  document.getElementById('gameSummary').textContent='读取题目，按选手方案摆板，逐步验证并记录成绩。';
+  const panel=document.getElementById('bigScreenPanel');
+  const right=document.querySelector('.right');
+  if(panel&&right) right.prepend(panel);
+  document.title='五珠机关盘 · 现场验证控制台';
+}
 function validateTarget(){
   const note=document.getElementById('tgtNote'); if(!note) return;
   const uniq=new Set(target);
@@ -2179,6 +2226,7 @@ document.getElementById('teamTimeInput').oninput=e=>{
 document.getElementById('openBigScreenBtn').onclick=openBigScreen;
 document.getElementById('startBigScreenBtn').onclick=startBigScreenVerification;
 document.getElementById('saveTeamScoreBtn').onclick=recordBigScreenScore;
+document.getElementById('liveLoadQuestionBtn').onclick=()=>document.getElementById('questionFileInput').click();
 document.getElementById('rotationCountSelect').onchange=e=>{
   if(!questionEditing) return;
   if(setQuestionRotationCount(Number(e.target.value))){
@@ -2214,6 +2262,7 @@ buildRotationCountSelect();
 buildInstr(); buildTarget(); enterDesign();
 updateQuestionEditorUI();
 configurePlayerMode();
+configureLiveMode();
 if(!playerMode) broadcastBigScreen('state');
 if(window.THREE) initThreeBoard();
 else window.addEventListener('load',initThreeBoard,{once:true});

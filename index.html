@@ -98,7 +98,7 @@
   body.live-mode #bigScreenPanel{border-color:#d48638;background:#11161b;border-radius:8px;}
   body.live-mode .panel{border-radius:8px;background:#10151b;border-color:#303943;}
   body.live-mode .board-stage{width:min(680px,100%);margin:0 auto;}
-  body.live-mode .left>.panel:nth-of-type(2){max-width:680px!important;margin-left:auto;margin-right:auto;}
+  body.live-mode #instructionPanel{max-width:680px!important;margin-left:auto;margin-right:auto;}
   body.live-mode #solveBtn,body.live-mode #publishBtn,body.live-mode #playBtn,body.live-mode #quickBtn,body.live-mode #sealBtn,body.live-mode #editBtn,body.live-mode #verifyBtn{display:none!important;}
   body.live-mode button.primary,body.live-mode button.go{background:#d48638;border-color:#d48638;color:#111;font-weight:800;}
   body.live-mode input:focus,body.live-mode button:focus-visible{outline:2px solid #f0a757;outline-offset:2px;}
@@ -107,6 +107,20 @@
   .live-rank-list b{color:#e4a65e;}
   .live-only{display:none;}
   body.live-mode .live-only{display:inline-flex;}
+  .screen-hud{display:none;}
+  body.screen-mode{padding:12px;overflow:hidden;background:#080b0f;}
+  body.screen-mode::before{display:none;}
+  body.screen-mode .game-intro{display:none;}
+  body.screen-mode .screen-hud{display:grid;grid-template-columns:1fr auto;gap:18px;align-items:center;height:76px;padding:10px 18px;border:1px solid #303943;border-radius:8px;background:#0e1318;}
+  .screen-team{font-size:24px;font-weight:800;}.screen-meta{display:flex;gap:24px;color:#aeb9c4;font-size:14px;}.screen-meta b{color:#f0a757;font-size:18px;}
+  body.screen-mode .wrap{display:block;max-width:none;margin:0;}
+  body.screen-mode .left{width:min(760px,68vw);max-width:none;margin:10px auto 0;}
+  body.screen-mode .right,body.screen-mode #questionEditor,body.screen-mode #solutionsPanel,body.screen-mode #compareStage,body.screen-mode #bigScreenPanel,body.screen-mode .left>.row,body.screen-mode #verifyBar{display:none!important;}
+  body.screen-mode #instructionPanel{display:block!important;max-width:none!important;padding:8px 12px;margin-bottom:8px;}
+  body.screen-mode .board-stage{width:min(680px,64vh);margin:0 auto;}
+  body.screen-mode .left>.panel:not(#instructionPanel){display:none;}
+  .screen-ranking{position:fixed;right:20px;top:98px;width:260px;max-height:calc(100vh - 118px);padding:14px;border:1px solid #303943;border-radius:8px;background:#0e1318;overflow:auto;}
+  .screen-ranking h2{margin:0 0 10px;color:#f0a757;font-size:14px;}
   @media (max-width:720px){
     body{padding:12px;}
     .game-intro{min-height:0;margin-bottom:12px;padding:10px 0 13px;background-size:430px auto;background-position:120px center;}
@@ -138,7 +152,13 @@
       <div class="player-rule"><b>目标</b><span>20 步按序出五珠</span></div>
       <div class="player-rule"><b>胜负</b><span>步数 → 板块 → 用时</span></div>
     </div>
-  </header>
+</header>
+
+  <section class="screen-hud" id="screenHud">
+    <div><div class="screen-team" id="screenTeamName">等待队伍</div><div class="hint"><span id="screenQuestionName">等待题目</span>　<span id="screenStatus">等待验证</span></div></div>
+    <div class="screen-meta"><span>作答时间 <b id="screenTeamTime">00:00:00</b></span><span>板块 <b id="screenWallCount">0</b></span><span>进度 <b id="screenProgress">0 / 20</b></span></div>
+  </section>
+  <aside class="screen-hud screen-ranking" id="screenRanking"><h2>现场排行榜</h2><ol class="live-rank-list" id="screenRankList"></ol></aside>
 
   <div class="wrap">
     <div class="left">
@@ -161,7 +181,7 @@
         </div>
         <div class="hint" id="questionEditHint">随机题面会重置五球位置与当前旋转次数。</div>
       </section>
-      <div class="panel" style="max-width:560px;">
+      <div class="panel" id="instructionPanel" style="max-width:560px;">
         <h2 id="instrTitle">旋转指令 · 20 次（题目给定）</h2>
         <div class="row">
           <span class="hint" id="instrHint">题面固定，不可修改</span>
@@ -298,6 +318,7 @@ let questionDragMoved = false;
 let bigScreenWindow = null;
 let bigScreenChannel = typeof BroadcastChannel==='function' ? new BroadcastChannel('five-marble-big-screen') : null;
 let bigScreenScores = [];
+let bigScreenAutoRunning = false;
 
 function queryParam(name){
   if(typeof window==='undefined'||!window.location||typeof URLSearchParams==='undefined') return null;
@@ -305,6 +326,7 @@ function queryParam(name){
 }
 const playerMode=queryParam('mode')==='play';
 const liveMode=queryParam('mode')==='live';
+const screenMode=queryParam('mode')==='screen';
 
 function bigScreenTeam(){
   const name=document.getElementById('teamNameInput')?.value?.trim()||'未命名队伍';
@@ -357,9 +379,21 @@ function openBigScreen(){
   setResult('大屏展示已打开。可拖到现场投影或第二块屏幕。');
 }
 async function startBigScreenVerification(){
+  if(bigScreenAutoRunning) return;
   if(questionEditing) finishQuestionEditing();
-  await verifyStart();
-  broadcastBigScreen('start');
+  bigScreenAutoRunning=true;
+  const button=document.getElementById('startBigScreenBtn');
+  button.disabled=true; button.textContent='自动验证中';
+  try{
+    await verifyStart();
+    while(verifying&&vStep<instr.length){
+      await sleep(280);
+      await verifyNext();
+    }
+  }finally{
+    bigScreenAutoRunning=false;
+    button.disabled=false; button.textContent='▶ 开始大屏验证';
+  }
 }
 function recordBigScreenScore(){
   const team=bigScreenTeam();
@@ -375,6 +409,49 @@ function renderOperatorRanking(){
   const list=document.getElementById('operatorRanking');
   if(!list) return;
   list.innerHTML=bigScreenScores.map((item,index)=>`<li><b>${index+1}</b><span>${item.name}</span><span>${item.completed?`${item.completionStep}步 · ${item.wallCount}板 · ${item.time||'未填时间'}`:'未完成'}</span></li>`).join('');
+}
+function renderScreenRanking(items=[]){
+  const list=document.getElementById('screenRankList');
+  if(!list) return;
+  list.innerHTML='';
+  items.forEach((item,index)=>{
+    const row=document.createElement('li');
+    const rank=document.createElement('b'); rank.textContent=String(index+1);
+    const name=document.createElement('span'); name.textContent=item.name;
+    const score=document.createElement('span'); score.textContent=item.completed?`${item.completionStep}步 · ${item.wallCount}板 · ${item.time||'未填'}`:'未完成';
+    row.append(rank,name,score); list.appendChild(row);
+  });
+}
+function applyScreenMessage(message){
+  if(!screenMode||!message||!message.N) return;
+  N=message.N; exitCol=message.exitCol;
+  balls=message.balls.map(ball=>({...ball}));
+  instr=message.instr.slice(); target=message.target.slice();
+  hwall=message.hw.map(row=>row.slice()); vwall=message.vw.map(row=>row.slice());
+  fixedInitialWalls=cloneWalls(hwall,vwall); questionName=message.questionName||DEFAULT_QUESTION_NAME;
+  if(message.type==='state'||message.type==='start'||!Object.keys(disp).length){
+    mode='anim'; theta=0; thetaTarget=0; initDisp();
+    for(const ball of balls){
+      const pos=message.positions?.[ball.id];
+      if(!pos) continue;
+      const [x,y]=cellCenter(pos[0],pos[1]);
+      Object.assign(disp[ball.id],{x,y,r:pos[0],c:pos[1],alpha:1,path:[],segment:null});
+    }
+  }else if(message.type==='step'){
+    thetaTarget=message.rotation||thetaTarget;
+    applyFrame({pos:message.positions||{},exits:[]});
+  }
+  for(const id of message.record||[]) if(disp[id]) disp[id].alpha=0;
+  vStep=message.step||0; vRecord=(message.record||[]).slice(); dropSeq=vRecord.slice();
+  buildInstr(); highlightChip(vStep); renderSeq(vRecord);
+  document.getElementById('screenTeamName').textContent=message.team?.name||'未命名队伍';
+  document.getElementById('screenQuestionName').textContent=questionName;
+  document.getElementById('screenTeamTime').textContent=message.team?.manualTime||'00:00:00';
+  document.getElementById('screenWallCount').textContent=String(message.wallCount??0);
+  document.getElementById('screenProgress').textContent=`${vStep} / ${instr.length}`;
+  if(message.type==='start') document.getElementById('screenStatus').textContent='验证进行中';
+  if(message.type==='result') document.getElementById('screenStatus').textContent=message.text||'验证结束';
+  if(message.leaderboard) renderScreenRanking(message.leaderboard);
 }
 
 /* ---------- 初始化 ---------- */
@@ -2198,6 +2275,14 @@ function configureLiveMode(){
   if(panel&&right) right.prepend(panel);
   document.title='五珠机关盘 · 现场验证控制台';
 }
+function configureScreenMode(){
+  if(!screenMode) return;
+  document.body.classList.add('screen-mode');
+  document.title='五珠机关盘 · 大屏验证';
+  mode='anim'; initDisp();
+  bigScreenChannel?.addEventListener('message',event=>applyScreenMessage(event.data));
+  window.addEventListener('message',event=>applyScreenMessage(event.data));
+}
 function validateTarget(){
   const note=document.getElementById('tgtNote'); if(!note) return;
   const uniq=new Set(target);
@@ -2263,7 +2348,8 @@ buildInstr(); buildTarget(); enterDesign();
 updateQuestionEditorUI();
 configurePlayerMode();
 configureLiveMode();
-if(!playerMode) broadcastBigScreen('state');
+configureScreenMode();
+if(!playerMode&&!screenMode) broadcastBigScreen('state');
 if(window.THREE) initThreeBoard();
 else window.addEventListener('load',initThreeBoard,{once:true});
 loop();

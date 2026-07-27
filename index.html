@@ -190,7 +190,7 @@
         <h2>现场大屏展示</h2>
         <div class="row">
           <label>队伍名称 <input id="teamNameInput" type="text" maxlength="30" placeholder="例如：闪电队"></label>
-          <label>作答时间 <input id="teamTimeInput" type="text" inputmode="numeric" maxlength="8" placeholder="00:00:00"></label>
+          <label>作答时间 <input id="teamTimeInput" type="text" inputmode="numeric" maxlength="8" placeholder="输入6位数字"></label>
           <span class="hint">当前板块：<b id="teamWallCount">0</b> 块</span>
         </div>
         <div class="row">
@@ -286,8 +286,8 @@ function bigScreenTeam(){
   const raw=document.getElementById('teamTimeInput')?.value?.trim()||'';
   let seconds=null;
   if(/^\d{1,3}:\d{2}:\d{2}$/.test(raw)){
-    const [hours,minutes,secs]=raw.split(':').map(Number);
-    if(minutes<60&&secs<60) seconds=hours*3600+minutes*60+secs;
+    const [minutes,secs,millis]=raw.split(':').map(Number);
+    if(secs<60&&millis<100) seconds=minutes*60+secs+millis/100;
   }else if(raw!==''&&Number.isFinite(Number(raw))&&Number(raw)>=0){
     seconds=Number(raw);
   }
@@ -295,8 +295,12 @@ function bigScreenTeam(){
 }
 function formatClock(seconds){
   if(!Number.isFinite(seconds)||seconds<0) return '未填写';
-  const whole=Math.round(seconds), hours=Math.floor(whole/3600), minutes=Math.floor((whole%3600)/60), secs=whole%60;
-  return [hours,minutes,secs].map(value=>String(value).padStart(2,'0')).join(':');
+  const whole=Math.round(seconds*100), minutes=Math.floor(whole/6000), secs=Math.floor((whole%6000)/100), millis=whole%100;
+  return [minutes,secs,millis].map(value=>String(value).padStart(2,'0')).join(':');
+}
+function formatTeamTimeInput(value){
+  const digits=String(value||'').replace(/\D/g,'').slice(0,6);
+  return [digits.slice(0,2),digits.slice(2,4),digits.slice(4,6)].filter(Boolean).join(':');
 }
 function bigScreenPositions(){
   const positions={};
@@ -2167,7 +2171,11 @@ document.getElementById('questionFileInput').onchange=async e=>{
 };
 document.getElementById('questionNameInput').oninput=e=>setQuestionName(e.target.value);
 document.getElementById('teamNameInput').oninput=()=>broadcastBigScreen('state');
-document.getElementById('teamTimeInput').oninput=()=>broadcastBigScreen('state');
+document.getElementById('teamTimeInput').oninput=e=>{
+  const formatted=formatTeamTimeInput(e.target.value);
+  if(e.target.value!==formatted) e.target.value=formatted;
+  broadcastBigScreen('state');
+};
 document.getElementById('openBigScreenBtn').onclick=openBigScreen;
 document.getElementById('startBigScreenBtn').onclick=startBigScreenVerification;
 document.getElementById('saveTeamScoreBtn').onclick=recordBigScreenScore;
